@@ -2069,43 +2069,107 @@
   background: var(--on-accent);
   transform: translateX(14px);
 }
-.theme-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+.theme-options {
+  border: 0;
+  padding: 0;
   margin: 24px 0;
+  min-width: 0;
 }
-.theme-card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 7px;
-  text-align: left;
-  color: var(--text);
+.theme-options legend {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 10px;
 }
-.theme-card.selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+.color-options,
+.appearance-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.theme-label {
-  padding: 12px 7px 7px;
+.theme-option {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-.theme-label strong {
-  display: block;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
   font-size: 12px;
-  font-weight: 500;
 }
-.theme-label span {
-  font-size: 10px;
-  color: var(--muted);
-  display: block;
-  margin-top: 4px;
+.theme-option:hover {
+  background: var(--soft);
 }
-.theme-label svg {
+.theme-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.theme-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.theme-option input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: grid;
+  place-items: center;
+}
+.color-swatch svg,
+.selection-check {
+  visibility: hidden;
+}
+.theme-option:has(input:checked) svg {
+  visibility: visible;
+}
+.selection-check {
   color: var(--accent);
+  margin-left: 24px;
+}
+.capitalize {
+  text-transform: capitalize;
+}
+.appearance-preview {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  margin: 24px 0;
+}
+.preview-heading,
+.preview-details {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.preview-heading {
+  margin-bottom: 14px;
+}
+.preview-details {
+  margin-top: 14px;
+  justify-content: flex-start;
+}
+.preview-action {
+  background: var(--accent);
+  color: var(--on-accent);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-left: auto;
+}
+.appearance-preview .theme-preview {
+  height: 165px;
 }
 .theme-preview {
   height: 115px;

@@ -1,16 +1,19 @@
 "use client";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Theme, WorkspacePane } from "@/types/domain";
+import type { ThemeColor, Appearance, WorkspacePane } from "@/types/domain";
+import { resolveTheme } from "@/lib/theme";
 interface WorkspaceState {
-  theme: Theme;
+  color: ThemeColor;
+  appearance: Appearance;
   reducedMotion: boolean;
   left: WorkspacePane;
   right: WorkspacePane;
   conversationId: string;
   model: string;
   drafts: Record<string, string>;
-  setTheme: (theme: Theme) => void;
+  setColor: (color: ThemeColor) => void;
+  setAppearance: (appearance: Appearance) => void;
   setMotion: (value: boolean) => void;
   setPane: (side: "left" | "right", value: Partial<WorkspacePane>) => void;
   setConversation: (id: string) => void;
@@ -20,7 +23,8 @@ interface WorkspaceState {
 export const useWorkspace = create<WorkspaceState>()(
   persist(
     (set) => ({
-      theme: "orange",
+      color: "orange",
+      appearance: "light",
       reducedMotion: false,
       left: {
         side: "left",
@@ -39,7 +43,8 @@ export const useWorkspace = create<WorkspaceState>()(
       conversationId: "",
       model: "",
       drafts: {},
-      setTheme: (theme) => set({ theme }),
+      setColor: (color) => set({ color }),
+      setAppearance: (appearance) => set({ appearance }),
       setMotion: (reducedMotion) => set({ reducedMotion }),
       setPane: (side, value) =>
         set((state) => ({ [side]: { ...state[side], ...value } })),
@@ -48,6 +53,21 @@ export const useWorkspace = create<WorkspaceState>()(
       setDraft: (id, value) =>
         set((state) => ({ drafts: { ...state.drafts, [id]: value } })),
     }),
-    { name: "gbot-workspace-v1" },
+    {
+      name: "gbot-workspace-v1",
+      version: 1,
+      migrate: (persisted) => {
+        const { theme: _legacy, ...rest } = (persisted ?? {}) as Record<
+          string,
+          unknown
+        >;
+        return { ...rest, ...resolveTheme(persisted) };
+      },
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as object),
+        ...resolveTheme(persisted),
+      }),
+    },
   ),
 );

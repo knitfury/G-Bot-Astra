@@ -14,8 +14,9 @@ import {
 } from "@phosphor-icons/react";
 import { useAction, useSnapshot } from "@/hooks/use-services";
 import { useWorkspace } from "@/stores/workspace";
+import { themeColors, appearances } from "@/lib/theme";
 import { services } from "@/services";
-import type { Theme, Diagnostics } from "@/types/domain";
+import type { Diagnostics } from "@/types/domain";
 import {
   PageHeading,
   Loading,
@@ -26,22 +27,6 @@ import {
 } from "@/components/common/ui";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-const themes: { id: Theme; name: string; description: string }[] = [
-  { id: "orange", name: "Daybreak", description: "Orange + light grey" },
-  {
-    id: "purple",
-    name: "After hours",
-    description: "Light purple + dark grey",
-  },
-  { id: "blue", name: "Clear skies", description: "Blue + cool neutrals" },
-  {
-    id: "green",
-    name: "Fresh perspective",
-    description: "Green + warm neutrals",
-  },
-  { id: "dark", name: "Quiet focus", description: "Dark grey" },
-  { id: "white", name: "Blank canvas", description: "White" },
-];
 const diagnosticLabels: {
   key: keyof Omit<Diagnostics, "authFailure">;
   title: string;
@@ -111,8 +96,10 @@ export function SettingsScreen() {
   const { data } = useSnapshot(),
     action = useAction(),
     router = useRouter();
-  const theme = useWorkspace((s) => s.theme),
-    setTheme = useWorkspace((s) => s.setTheme),
+  const color = useWorkspace((s) => s.color),
+    appearance = useWorkspace((s) => s.appearance),
+    setColor = useWorkspace((s) => s.setColor),
+    setAppearance = useWorkspace((s) => s.setAppearance),
     reduced = useWorkspace((s) => s.reducedMotion),
     setMotion = useWorkspace((s) => s.setMotion),
     select = useWorkspace((s) => s.setConversation);
@@ -156,49 +143,96 @@ export function SettingsScreen() {
           {tab === "Appearance" ? (
             <>
               <h2>Your workspace, in your colors.</h2>
-              <p>Six thoughtfully balanced themes. One familiar workspace.</p>
-              <div className="theme-grid">
-                {themes.map((t) => (
-                  <button
-                    className={`theme-card ${theme === t.id ? "selected" : ""}`}
-                    key={t.id}
-                    onClick={() => setTheme(t.id)}
-                    aria-pressed={theme === t.id}
-                    aria-label={`${t.description} theme`}
-                  >
-                    <div className="theme-preview" data-theme={t.id}>
-                      <div className="mini-rail">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                      <div className="mini-app">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                      <div className="mini-chat">
-                        <span className="mini-logo" />
-                        <span className="mini-line" />
-                        <span className="mini-line short" />
-                        <div className="mini-input">
-                          <span />
-                        </div>
-                      </div>
-                      <div className="mini-app">
-                        <span />
-                        <span />
-                      </div>
+              <p>Choose your color, then the light that suits your day.</p>
+              <fieldset className="theme-options">
+                <legend>Color</legend>
+                <div className="color-options">
+                  {themeColors.map((option) => (
+                    <label className="theme-option" key={option}>
+                      <input
+                        type="radio"
+                        name="theme-color"
+                        value={option}
+                        checked={color === option}
+                        onChange={() => setColor(option)}
+                      />
+                      <span
+                        className="color-swatch"
+                        data-color={option}
+                        data-appearance={appearance}
+                        aria-hidden="true"
+                      >
+                        <Check size={14} />
+                      </span>
+                      <span className="capitalize">{option}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset className="theme-options">
+                <legend>Appearance</legend>
+                <div className="appearance-options">
+                  {appearances.map((option) => (
+                    <label className="theme-option" key={option}>
+                      <input
+                        type="radio"
+                        name="theme-appearance"
+                        value={option}
+                        checked={appearance === option}
+                        onChange={() => setAppearance(option)}
+                      />
+                      <span className="capitalize">{option}</span>
+                      <Check
+                        size={16}
+                        className="selection-check"
+                        aria-hidden="true"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="appearance-preview" aria-label="Theme preview">
+                <div className="preview-heading">
+                  <strong className="capitalize">
+                    {color} · {appearance}
+                  </strong>
+                  <span className="tiny muted">
+                    {color === "neutral"
+                      ? appearance === "light"
+                        ? "White"
+                        : "Dark grey"
+                      : "Your color. Your workspace."}
+                  </span>
+                </div>
+                <div className="theme-preview" aria-hidden="true">
+                  <div className="mini-rail">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <div className="mini-app">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <div className="mini-chat">
+                    <span className="mini-logo" />
+                    <span className="mini-line" />
+                    <span className="mini-line short" />
+                    <div className="mini-input">
+                      <span />
                     </div>
-                    <div className="theme-label">
-                      <div>
-                        <strong>{t.name}</strong>
-                        <span>{t.description}</span>
-                      </div>
-                      {theme === t.id && <Check size={17} />}
-                    </div>
-                  </button>
-                ))}
+                  </div>
+                  <div className="mini-app">
+                    <span />
+                    <span />
+                  </div>
+                </div>
+                <div className="preview-details">
+                  <span className="badge success">✓ Connected</span>
+                  <span className="badge warning">Approval required</span>
+                  <span className="preview-action">Ask G-Bot ↗</span>
+                </div>
               </div>
               <Toggle
                 label="Reduce motion"

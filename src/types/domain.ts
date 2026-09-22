@@ -1,5 +1,6 @@
 export type Plan = "free" | "starter" | "business";
-export type Theme = "orange" | "purple" | "blue" | "green" | "dark" | "white";
+export type ThemeColor = "orange" | "purple" | "blue" | "green" | "neutral";
+export type Appearance = "light" | "dark";
 export type Status =
   | "connected"
   | "disconnected"

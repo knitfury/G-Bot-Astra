@@ -212,32 +212,48 @@ test("pane switching, resizing, persistence, G-Bot-only and narrow context", asy
   await noOverflow(page);
   await page.screenshot({ path: info.outputPath("mobile-workspace.png") });
 });
-test("all six themes, settings, routes and responsive layouts", async ({
+test("all ten themes, settings, routes and responsive layouts", async ({
   page,
 }, info) => {
+  test.setTimeout(120_000);
   await demo(page);
-  for (const [id, label] of [
-    ["orange", "Orange + light grey"],
-    ["purple", "Light purple + dark grey"],
-    ["blue", "Blue + cool neutrals"],
-    ["green", "Green + warm neutrals"],
-    ["dark", "Dark grey"],
-    ["white", "White"],
-  ]) {
-    await settings(page, "Appearance");
-    await page
-      .getByRole("button", { name: label + " theme", exact: true })
-      .click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", id);
-    await page.screenshot({ path: info.outputPath(`theme-${id}.png`) });
-    await page.goto("/workspace");
-    await expect(
-      page.getByRole("heading", { name: "What can we get done?" }),
-    ).toBeVisible();
-    await noOverflow(page);
-    if (id === "purple") {
+  for (const color of ["orange", "purple", "blue", "green", "neutral"]) {
+    for (const appearance of ["light", "dark"]) {
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await settings(page, "Appearance");
+      await page.getByRole("radio", { name: color, exact: true }).check();
+      await page.getByRole("radio", { name: appearance, exact: true }).check();
+      await expect(page.locator("html")).toHaveAttribute("data-color", color);
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-appearance",
+        appearance,
+      );
+      await page.screenshot({
+        path: info.outputPath(`${color}-${appearance}-settings.png`),
+      });
+      await page.goto("/workspace");
+      await expect(
+        page.getByRole("heading", { name: "What can we get done?" }),
+      ).toBeVisible();
       await page.locator(".record-detail").first().waitFor();
-      await page.screenshot({ path: info.outputPath("purple-workspace.png") });
+      await expect(page.locator("html")).toHaveAttribute("data-color", color);
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-appearance",
+        appearance,
+      );
+      for (const [width, height] of [
+        [1440, 1000],
+        [768, 1024],
+        [390, 844],
+      ]) {
+        await page.setViewportSize({ width, height });
+        await noOverflow(page);
+        await page.screenshot({
+          path: info.outputPath(
+            `${color}-${appearance}-workspace-${width}.png`,
+          ),
+        });
+      }
     }
   }
   await settings(page, "Appearance");
