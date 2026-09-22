@@ -8,8 +8,8 @@ Validation date: 2026-09-22. Runtime: Next.js 15.5.25, React 19, strict TypeScri
 | --- | --- |
 | Application startup | Passed in development and production |
 | Production build | Passed: compilation, TypeScript validation and route generation |
-| Service tests | 6 passed, 0 failed |
-| Browser acceptance tests | 9 passed, 0 failed; final suite completed in approximately 1.6 minutes |
+| Service and theme tests | 19 passed, 0 failed |
+| Browser acceptance tests | 19 passed, 0 failed; full suite completed in approximately 2.6 minutes |
 | Primary routes | Welcome, signup/login, onboarding, workspace, apps/detail, providers, activity, account and settings rendered |
 | Signature workflow | Email → Inventory → grounded draft → edited approval → simulated send → audit event |
 | Support workflow | Email → CRM → Helpdesk approval, rejection and service-level approved completion |
@@ -18,11 +18,11 @@ Validation date: 2026-09-22. Runtime: Next.js 15.5.25, React 19, strict TypeScri
 | Provider management | Onboarding, Generic REST errors and recovery, provider coexistence, model selection and removal |
 | Attachments | File, image preview, URL, unsupported-file state and removal exercised |
 | Pane layouts | Independent switching/removal, keyboard resizing, persistence, G-Bot-only, mobile context dialog |
-| Six themes | Applied through settings, checked across routes, screenshot review completed |
+| Ten theme combinations | Five independent colors × Light/Dark; desktop, tablet and mobile screenshots inspected |
 | Responsive checks | 1440×1000 desktop, 768×1024 tablet, 390×844 mobile; no document-level horizontal overflow on checked routes |
 | Credential handling | Saved provider state excludes test keys and advanced headers; logout disconnects integrations |
 | Keyboard/focus | Labeled controls, Radix dialogs with Escape/focus handling, keyboard pane resizing and composer Enter/Shift+Enter behavior |
-| Text-token contrast | 48 foreground/background pairs checked; minimum 4.74:1 after muted-color corrections |
+| Text-token contrast | 140 semantic foreground/background pairs checked; minimum 4.62:1; automatic regression test |
 
 ## Issues found and corrected
 
@@ -46,3 +46,7 @@ The broader test run also inspected theme previews, the purple workspace, G-Bot-
 The initial Playwright CDN download was unavailable in this execution environment. An npm-distributed Chromium binary was used instead; the application was still tested as a production Next.js build. The fallback setup is documented in the engineering handoff.
 
 This is not a claim of complete WCAG certification or cross-browser/native testing. The checks above are specific evidence; live integration, desktop packaging and real authentication/billing remain Phase 2 work.
+
+## Colored dark appearance refinement
+
+See [theme engineering notes](THEME_DARK_VARIANTS.md) for persistence migration, token architecture, and the expanded browser/visual review. Existing Phase 1 mock service behavior is unchanged.

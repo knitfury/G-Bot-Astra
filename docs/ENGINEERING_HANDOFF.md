@@ -39,7 +39,7 @@ Development output uses `.next-dev`; production uses `.next` so a development wa
 | `/providers` | Multiple providers, discovery, tests, custom OpenAI-compatible and Generic REST setup |
 | `/activity` | Business audit events filtered by app, status, action, date and conversation |
 | `/account` | Profile, mock upgrade/downgrade, entitlement and secure logout |
-| `/settings` | General, six themes, privacy, diagnostics and desktop update simulation |
+| `/settings` | General, five colors with independent light/dark appearance, privacy, diagnostics and desktop update simulation |
 
 Tablet/mobile views expose app context through dialogs rather than squeezing three columns together. Conversation history and pane/theme/model preferences survive refresh. Text drafts survive management-route navigation.
 
