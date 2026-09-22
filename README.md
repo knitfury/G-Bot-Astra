@@ -2,7 +2,7 @@
 
 **Ask once. Work across your business.**
 
-A complete Phase 1 frontend simulation of a configurable AI business workspace. G-Bot stays in the center; business apps sit in optional, resizable side panes. Includes onboarding, multiple BYOK providers, eight business-app slots, chat and attachments, cross-app execution, approvals, activity, plan simulation, and six themes.
+A complete Phase 1 frontend simulation of a configurable AI business workspace. G-Bot stays in the center; business apps sit in optional, resizable side panes. Includes onboarding, multiple BYOK providers, eight business-app slots, chat and attachments, cross-app execution, approvals, activity, plan simulation, and five colors with independent light/dark appearance.
 
 ![G-Bot desktop workspace](docs/screenshots/workspace.png)
 

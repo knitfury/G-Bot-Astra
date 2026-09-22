@@ -99,7 +99,10 @@ test("signature scenario, edited approval, feedback, history and activity", asyn
   await expect(
     page.getByRole("button", { name: "Helpful response" }).last(),
   ).toHaveAttribute("aria-pressed", "true");
-  await page.screenshot({ path: info.outputPath("signature-result.png") });
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("signature-result.png"),
+  });
   await page.getByRole("button", { name: "Conversation history" }).click();
   await page.getByRole("button", { name: /Rename Find Maya/ }).click();
   await page
@@ -141,7 +144,10 @@ test("support approval rejection and cross-app partial failure recovery", async 
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await send(page, "Find Maya's latest email and check inventory.");
   await expect(page.getByText("Task paused.", { exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath("partial-failure.png") });
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("partial-failure.png"),
+  });
   await settings(page, "Advanced");
   await page
     .getByRole("switch", { name: "Inventory unavailable", exact: true })
@@ -164,7 +170,10 @@ test("downgrade retains eight configurations and limits execution", async ({
   await page.goto("/connections");
   await expect(page.locator(".connection-card")).toHaveCount(8);
   await expect(page.locator(".connection-card.locked")).toHaveCount(3);
-  await page.screenshot({ path: info.outputPath("starter-connections.png") });
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("starter-connections.png"),
+  });
   await page.goto("/account");
   await page.getByRole("button", { name: "Switch to free" }).click();
   await page.getByRole("button", { name: "Confirm demo plan" }).click();
@@ -199,7 +208,10 @@ test("pane switching, resizing, persistence, G-Bot-only and narrow context", asy
   await expect(page.locator(".business-pane")).toHaveCount(0);
   await page.reload();
   await expect(page.locator(".business-pane")).toHaveCount(0);
-  await page.screenshot({ path: info.outputPath("gbot-only.png") });
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("gbot-only.png"),
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Toggle left pane" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -207,40 +219,78 @@ test("pane switching, resizing, persistence, G-Bot-only and narrow context", asy
     .getByRole("dialog")
     .getByLabel("left pane app", { exact: true })
     .selectOption("app-0");
-  await page.screenshot({ path: info.outputPath("mobile-context.png") });
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("mobile-context.png"),
+  });
   await page.keyboard.press("Escape");
   await noOverflow(page);
-  await page.screenshot({ path: info.outputPath("mobile-workspace.png") });
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("mobile-workspace.png"),
+  });
 });
-test("all six themes, settings, routes and responsive layouts", async ({
+test("all ten themes, settings, routes and responsive layouts", async ({
   page,
 }, info) => {
+  test.setTimeout(120_000);
   await demo(page);
-  for (const [id, label] of [
-    ["orange", "Orange + light grey"],
-    ["purple", "Light purple + dark grey"],
-    ["blue", "Blue + cool neutrals"],
-    ["green", "Green + warm neutrals"],
-    ["dark", "Dark grey"],
-    ["white", "White"],
-  ]) {
-    await settings(page, "Appearance");
-    await page
-      .getByRole("button", { name: label + " theme", exact: true })
-      .click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", id);
-    await page.screenshot({ path: info.outputPath(`theme-${id}.png`) });
-    await page.goto("/workspace");
-    await expect(
-      page.getByRole("heading", { name: "What can we get done?" }),
-    ).toBeVisible();
-    await noOverflow(page);
-    if (id === "purple") {
+  for (const color of ["orange", "purple", "blue", "green", "neutral"]) {
+    for (const appearance of ["light", "dark"]) {
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await settings(page, "Appearance");
+      await page.getByRole("radio", { name: color, exact: true }).check();
+      await page.getByRole("radio", { name: appearance, exact: true }).check();
+      await expect(page.locator("html")).toHaveAttribute("data-color", color);
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-appearance",
+        appearance,
+      );
+      await page.screenshot({
+        animations: "disabled",
+        path: info.outputPath(`${color}-${appearance}-settings.png`),
+      });
+      await page.goto("/workspace");
+      await expect(
+        page.getByRole("heading", { name: "What can we get done?" }),
+      ).toBeVisible();
       await page.locator(".record-detail").first().waitFor();
-      await page.screenshot({ path: info.outputPath("purple-workspace.png") });
+      await expect(page.locator("html")).toHaveAttribute("data-color", color);
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-appearance",
+        appearance,
+      );
+      for (const [width, height] of [
+        [1440, 1000],
+        [768, 1024],
+        [390, 844],
+      ]) {
+        await page.setViewportSize({ width, height });
+        await noOverflow(page);
+        await page.screenshot({
+          animations: "disabled",
+          path: info.outputPath(
+            `${color}-${appearance}-workspace-${width}.png`,
+          ),
+        });
+      }
     }
   }
   await settings(page, "Appearance");
+  await page.getByRole("radio", { name: "neutral", exact: true }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(
+    page.getByRole("radio", { name: "green", exact: true }),
+  ).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-appearance", "dark");
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("keyboard-focus.png"),
+  });
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    page.getByRole("radio", { name: "neutral", exact: true }),
+  ).toBeChecked();
   await page
     .getByRole("switch", { name: "Reduce motion", exact: true })
     .check();
@@ -259,7 +309,10 @@ test("all six themes, settings, routes and responsive layouts", async ({
   await page.setViewportSize({ width: 768, height: 1024 });
   await page.goto("/workspace");
   await noOverflow(page);
-  await page.screenshot({ path: info.outputPath("tablet-workspace.png") });
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("tablet-workspace.png"),
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   for (const route of [
     "/connections",
@@ -272,6 +325,7 @@ test("all six themes, settings, routes and responsive layouts", async ({
     await expect(page.locator("h1")).toBeVisible();
     await noOverflow(page);
     await page.screenshot({
+      animations: "disabled",
       path: info.outputPath(`mobile-${route.slice(1)}.png`),
     });
   }
@@ -349,7 +403,10 @@ test("file, image, URL attachments and unsupported file recovery", async ({
       ),
     });
   await expect(page.locator(".attachment-chip img")).toBeVisible();
-  await page.screenshot({ path: info.outputPath("attachments.png") });
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("attachments.png"),
+  });
   await send(page, "Check Maya stock using the demo scenario.");
   await expect(
     page.getByRole("heading", { name: "Available and ready for your reply" }),

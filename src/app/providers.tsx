@@ -11,7 +11,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
       }),
   );
-  const theme = useWorkspace((s) => s.theme),
+  const color = useWorkspace((s) => s.color),
+    appearance = useWorkspace((s) => s.appearance),
     reduced = useWorkspace((s) => s.reducedMotion);
   useEffect(() => {
     services.hydrate();
@@ -20,9 +21,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     });
   }, [client]);
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.color = color;
+    document.documentElement.dataset.appearance = appearance;
     document.documentElement.dataset.motion = reduced ? "reduced" : "full";
-  }, [theme, reduced]);
+  }, [color, appearance, reduced]);
   return (
     <QueryClientProvider client={client}>
       <MotionConfig reducedMotion={reduced ? "always" : "user"}>

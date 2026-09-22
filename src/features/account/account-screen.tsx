@@ -129,7 +129,7 @@ export function AccountScreen() {
               </li>
               <li>
                 <Check size={14} />
-                All six themes
+                All colors with light & dark appearance
               </li>
             </ul>
             <Button
