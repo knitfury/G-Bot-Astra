@@ -67,6 +67,9 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByRole("heading", { name: "What can we get done?" }).waitFor();
+  await page.waitForFunction(
+    () => document.querySelector(".message-scroll")?.scrollTop === 0,
+  );
   await page.screenshot({ path: output + "/mobile.png" });
   if (errors.length) throw new Error(errors.join("\n"));
   console.log(

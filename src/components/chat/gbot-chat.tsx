@@ -85,7 +85,10 @@ export function GBotChat() {
     messages.at(-1)?.status,
     nearBottom,
   ]);
-  useEffect(() => setNearBottom(true), [cid]);
+  useEffect(() => {
+    setNearBottom(true);
+    if (!cid) scroller.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [cid]);
   async function send(prompt: string, attachments: Attachment[]) {
     setStarting(true);
     try {
