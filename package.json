@@ -1,1 +1,49 @@
-{"name":"g-bot-astra","version":"0.1.0","private":true,"scripts":{"dev":"next dev --hostname 0.0.0.0","build":"next build","start":"next start --hostname 0.0.0.0","typecheck":"tsc --noEmit","test":"tsx --test tests/*.test.ts","test:e2e":"playwright test"},"dependencies":{"next":"15.5.25","react":"19.2.6","react-dom":"19.2.6","@tailwindcss/postcss":"4.2.1","tailwindcss":"4.2.1","@radix-ui/react-dialog":"^1.1.15","@radix-ui/react-slot":"^1.2.3","class-variance-authority":"^0.7.1","clsx":"^2.1.1","tailwind-merge":"^3.3.1","framer-motion":"^12.23.0","@phosphor-icons/react":"^2.1.10","zustand":"^5.0.8","@tanstack/react-query":"^5.90.0","react-hook-form":"^7.62.0","@hookform/resolvers":"^5.2.1","zod":"^4.1.5","react-markdown":"^10.1.0","remark-gfm":"^4.0.1"},"devDependencies":{"typescript":"^5.9.3","@types/node":"^22","@types/react":"^19","@types/react-dom":"^19","@playwright/test":"^1.55.0","tsx":"^4.20.0"},"engines":{"node":">=20.9.0"}}
+{
+  "name": "g-bot-astra",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"tests/**/*.ts\" \"*.{json,ts,mjs}\"",
+    "test:prepare-browser": "node scripts/prepare-browser.mjs"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.2.1",
+    "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@tailwindcss/postcss": "4.2.1",
+    "@tanstack/react-query": "^5.90.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.23.0",
+    "next": "15.5.25",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-hook-form": "^7.62.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss": "4.2.1",
+    "zod": "^4.1.5",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@sparticuz/chromium": "^153.0.0",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "prettier": "^3.9.8",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  }
+}
