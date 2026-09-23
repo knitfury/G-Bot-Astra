@@ -67,7 +67,10 @@ try {
     await page
       .getByRole("button", { name: "Check for updates", exact: true })
       .click();
-    await page.getByRole("alert").filter({hasText:"Updates require a signed"}).waitFor();
+    await page
+      .getByRole("alert")
+      .filter({ hasText: "Updates require a signed" })
+      .waitFor();
   }
   await page.screenshot({
     path: "test-results-electron/update-state.png",

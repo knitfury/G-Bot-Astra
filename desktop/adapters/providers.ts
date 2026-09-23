@@ -385,6 +385,7 @@ export class HTTPInference implements Inference {
             content?: {
               parts?: {
                 text?: string;
+                thought?: boolean;
                 thoughtSignature?: string;
                 functionCall?: { name: string; args: unknown };
               }[];
@@ -397,7 +398,10 @@ export class HTTPInference implements Inference {
             "Model returned no usable content; check model capability or safety filtering.",
           );
         result = {
-          text: parts.map((p) => p.text ?? "").join(""),
+          text: parts
+            .filter((p) => !p.thought)
+            .map((p) => p.text ?? "")
+            .join(""),
           calls: parts.flatMap((p) =>
             p.functionCall
               ? [
@@ -420,6 +424,11 @@ export class HTTPInference implements Inference {
           );
         result = { text, calls: [] };
       }
+      if (result.calls.length > 16)
+        throw new DomainError(
+          "CAPABILITY",
+          "Provider requested too many tools.",
+        );
       if (!result.text && !result.calls.length)
         throw new DomainError(
           "CAPABILITY",

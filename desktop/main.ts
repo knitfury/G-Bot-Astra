@@ -171,7 +171,7 @@ async function boot() {
       event.preventDefault(),
     );
     window.once("ready-to-show", () => window?.show());
-    await window.loadURL(origin);
+    await window.loadURL(origin + (runtime.db.user ? "/workspace" : "/"));
   };
   session.defaultSession.setPermissionRequestHandler(
     (_wc, _permission, callback) => callback(false),
