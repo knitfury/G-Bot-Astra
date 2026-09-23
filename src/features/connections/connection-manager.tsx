@@ -18,6 +18,7 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { useAction, useSnapshot } from "@/hooks/use-services";
+import { useDesktop } from "@/hooks/use-desktop";
 import { services } from "@/services";
 import {
   requiredPlan,
@@ -53,6 +54,9 @@ const schema = z.object({
   category: z.enum(appCategories as [Category, ...Category[]]),
   auth: z.enum(["OAuth", "Token", "None"]),
   token: z.string(),
+  authHeader: z.string(),
+  headers: z.string(),
+  oauthClientId: z.string(),
 });
 type Values = z.infer<typeof schema>;
 export function ConnectionForm({
@@ -65,6 +69,7 @@ export function ConnectionForm({
   onDone: () => void;
 }) {
   const action = useAction();
+  const desktop = useDesktop();
   const [step, setStep] = useState<"configure" | "permission" | "complete">(
       "configure",
     ),
@@ -83,13 +88,30 @@ export function ConnectionForm({
       category: connection?.category || appCategories[slot],
       auth: connection?.auth || "OAuth",
       token: "",
+      authHeader: connection?.authHeader || "Authorization",
+      headers: "{}",
+      oauthClientId: connection?.oauthClientId || "",
     },
   });
   async function save(v: Values) {
-    if (v.auth === "Token" && v.token.length < 8)
+    if (!desktop && v.auth === "Token" && v.token.length < 8)
       throw new Error("Use a demo token with at least 8 characters.");
     const result = await services.connections.save(
-      { name: v.name, url: v.url, category: v.category, auth: v.auth, slot },
+      {
+        name: v.name,
+        url: v.url,
+        category: v.category,
+        auth: v.auth,
+        slot,
+        ...(desktop
+          ? {
+              token: v.token,
+              authHeader: v.authHeader,
+              headers: v.headers,
+              oauthClientId: v.oauthClientId,
+            }
+          : {}),
+      },
       connection?.id,
     );
     setId(result);
@@ -129,8 +151,9 @@ export function ConnectionForm({
               <span className="field-error">{errors.url.message}</span>
             )}
             <span className="field-help">
-              Any HTTP(S) endpoint is simulated. Include “fail” in the URL to
-              test recovery.
+              {desktop
+                ? "Enter a remote MCP Streamable HTTP endpoint. HTTPS is required; loopback HTTP is allowed for development."
+                : "Any HTTP(S) endpoint is simulated. Include “fail” in the URL to test recovery."}
             </span>
           </label>
           <label className="field">
@@ -143,17 +166,48 @@ export function ConnectionForm({
           </label>
           {watch("auth") === "Token" && (
             <label className="field">
-              Demo token
+              {desktop ? "Token / API key" : "Demo token"}
               <input
                 {...register("token")}
                 type="password"
                 autoComplete="off"
-                placeholder="demo-token-1234"
+                placeholder={desktop ? "Enter credential" : "demo-token-1234"}
               />
               <span className="field-help">
-                Demo tokens are discarded. Do not use a real credential.
+                {desktop
+                  ? "Encrypted using your operating system’s credential protection."
+                  : "Demo tokens are discarded. Do not use a real credential."}
               </span>
             </label>
+          )}
+          {desktop && (
+            <>
+              {watch("auth") === "Token" && (
+                <label className="field">
+                  Authentication header
+                  <input {...register("authHeader")} />
+                  <span className="field-help">
+                    Authorization adds Bearer automatically; use x-api-key for
+                    API keys.
+                  </span>
+                </label>
+              )}
+              {watch("auth") === "OAuth" && (
+                <label className="field">
+                  OAuth client ID (optional)
+                  <input {...register("oauthClientId")} />
+                  <span className="field-help">
+                    Use a registered public client if the server does not
+                    support dynamic registration. Callback:
+                    http://127.0.0.1:43827/oauth/callback
+                  </span>
+                </label>
+              )}
+              <label className="field">
+                Custom headers (JSON, securely stored)
+                <textarea {...register("headers")} />
+              </label>
+            </>
           )}
           <div className="form-actions">
             <Button type="submit" variant="default" disabled={action.isPending}>
@@ -184,8 +238,9 @@ export function ConnectionForm({
           </label>
           {watch("auth") === "OAuth" && (
             <Notice>
-              OAuth simulation: approving here represents the provider consent
-              screen. No external sign-in occurs.
+              {desktop
+                ? "Your browser will open the server’s authorization page. Return here after consent. Newly discovered tools remain disabled until you review them."
+                : "OAuth simulation: approving here represents the provider consent screen. No external sign-in occurs."}
             </Notice>
           )}
           <div className="form-actions">
@@ -210,7 +265,9 @@ export function ConnectionForm({
                 : action.error
                   ? "Retry connection"
                   : watch("auth") === "OAuth"
-                    ? "Authorize demo connection"
+                    ? desktop
+                      ? "Authorize connection"
+                      : "Authorize demo connection"
                     : "Connect app"}
             </Button>
           </div>
@@ -221,8 +278,9 @@ export function ConnectionForm({
             <CheckCircle size={44} weight="duotone" />
             <h3>{watch("name")} is connected.</h3>
             <p>
-              Your app is ready to provide context. Inspect its discovered tools
-              and permissions at any time.
+              {desktop
+                ? "Open this connection’s Tools tab to review and enable discovered tools. New tools are disabled by default."
+                : "Your app is ready to provide context. Inspect its discovered tools and permissions at any time."}
             </p>
           </div>
           <Button variant="default" onClick={onDone}>
@@ -366,7 +424,7 @@ export function ConnectionManager({
         open={slot !== undefined}
         onOpenChange={() => setSlot(undefined)}
         title="Connect a business app"
-        description={`Set up connection slot ${(slot ?? 0) + 1}. All connection requests are simulated.`}
+        description={`Set up connection slot ${(slot ?? 0) + 1}. ${data.runtime ? "Connect directly to your MCP server." : "All connection requests are simulated."}`}
       >
         {slot !== undefined && (
           <ConnectionForm slot={slot} onDone={() => setSlot(undefined)} />
@@ -512,7 +570,11 @@ export function ConnectionDetail({ id }: { id: string }) {
             {!c.tools.length ? (
               <Empty
                 title="No tools discovered"
-                description="Check the endpoint or turn off the no-tools simulation, then reconnect."
+                description={
+                  data.runtime
+                    ? "Check the remote endpoint and reconnect to refresh discovery."
+                    : "Check the endpoint or turn off the no-tools simulation, then reconnect."
+                }
               />
             ) : (
               c.tools.map((t) => (
@@ -581,7 +643,9 @@ export function ConnectionDetail({ id }: { id: string }) {
                 {
                   connectionId: c.id,
                   category: c.category,
-                  transport: "Streamable HTTP (simulated)",
+                  transport: data.runtime
+                    ? "Streamable HTTP"
+                    : "Streamable HTTP (simulated)",
                   tools: c.tools.map((t) => ({
                     name: t.name,
                     risk: t.risk,
@@ -634,7 +698,9 @@ export function ConnectionDetail({ id }: { id: string }) {
           >
             {action.isPending
               ? "Authenticating & discovering…"
-              : "Authorize demo connection"}
+              : data.runtime
+                ? "Reconnect"
+                : "Authorize demo connection"}
           </Button>
         </div>
       </Dialog>

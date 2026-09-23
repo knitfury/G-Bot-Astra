@@ -1,3 +1,5 @@
+> Current Phase 2 validation is recorded in [PHASE2_VALIDATION.md](PHASE2_VALIDATION.md). This file preserves the Phase 1 baseline.
+
 # Phase 1 validation record
 
 Validation date: 2026-09-22. Runtime: Next.js 15.5.25, React 19, strict TypeScript. Browser: headless Chromium 153 against the production Next.js server.

@@ -38,7 +38,7 @@ export function ExecutionTimeline({ tools }: { tools: ToolCall[] }) {
             <CaretDown size={12} />
           </summary>
           <div className="tool-detail">
-            <p>{t.output || t.error || "Waiting for a simulated result…"}</p>
+            <p>{t.output || t.error || "Waiting for the tool result…"}</p>
             <dl>
               <dt>Tool</dt>
               <dd>{t.toolId || "Waiting for connection"}</dd>

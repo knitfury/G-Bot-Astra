@@ -1,4 +1,8 @@
-# G-Bot Phase 1 — engineering handoff
+# G-Bot — engineering handoff
+
+**Phase 2 desktop/integration delivery:** see [PHASE2_HANDOFF.md](PHASE2_HANDOFF.md) and [PHASE2_VALIDATION.md](PHASE2_VALIDATION.md). The following Phase 1 record remains the baseline for the deterministic browser/demo path; its simulation statements do not describe real Electron mode.
+
+## Preserved Phase 1 handoff
 
 ## Delivered application
 

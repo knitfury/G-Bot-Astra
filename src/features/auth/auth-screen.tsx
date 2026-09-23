@@ -14,6 +14,7 @@ import {
   ArrowLeft,
 } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
+import { useDesktop } from "@/hooks/use-desktop";
 import { services } from "@/services";
 import { useAction } from "@/hooks/use-services";
 import { useWorkspace } from "@/stores/workspace";
@@ -51,6 +52,7 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
     resolver: zodResolver(schema),
     defaultValues: { name: "", email: "", password: "", terms: false },
   });
+  const desktop = useDesktop();
   async function demo() {
     await action.mutateAsync(() => services.auth.demo());
     setConversation("");
@@ -72,6 +74,45 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
     );
     router.push(mode === "signup" ? "/onboarding" : "/workspace");
   }
+  if (desktop)
+    return (
+      <div className="auth-layout">
+        <div className="auth-brand">
+          <Logo />
+          <strong>G-Bot Desktop</strong>
+        </div>
+        <section className="auth-copy">
+          <h1>
+            Your business.
+            <br />
+            Your workspace.
+          </h1>
+          <p>
+            Connect your AI and remote MCP servers. Your credentials stay
+            protected on this device.
+          </p>
+        </section>
+        <section className="auth-card panel stack">
+          <h2>Open your local workspace</h2>
+          <p>
+            No cloud sign-in is configured. This profile is local to your
+            operating-system account. Plan controls are for development testing.
+          </p>
+          <Button
+            variant="default"
+            disabled={action.isPending}
+            onClick={() => void demo().catch(() => {})}
+          >
+            Open local workspace
+          </Button>
+          <p className="tiny">
+            Your prompts and selected context go directly to your chosen AI
+            provider. MCP calls go directly to your configured servers.
+          </p>
+          {action.error && <ErrorState message={action.error.message} />}
+        </section>
+      </div>
+    );
   return (
     <div className="auth-layout">
       <div className="auth-brand">

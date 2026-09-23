@@ -6,7 +6,11 @@ export type Status =
   | "disconnected"
   | "connecting"
   | "needs authentication"
-  | "error";
+  | "error"
+  | "degraded"
+  | "reconnecting"
+  | "authorization expired"
+  | "authenticating";
 export type TaskStatus =
   | "queued"
   | "running"
@@ -78,6 +82,8 @@ export interface AIProviderConnection extends Omit<ProviderInput, "key"> {
   lastTest: string;
 }
 export interface MCPTool {
+  inputSchema?: Record<string, unknown>;
+  schemaHash?: string;
   id: string;
   connectionId: string;
   name: string;
@@ -95,6 +101,8 @@ export interface MCPConnection {
   icon: Category;
   url: string;
   auth: "OAuth" | "Token" | "None";
+  authHeader?: string;
+  oauthClientId?: string;
   status: Status;
   enabled: boolean;
   tools: MCPTool[];
@@ -135,6 +143,9 @@ export interface ToolCall {
   requiresApproval: boolean;
 }
 export interface ApprovalRequest {
+  arguments?: Record<string, unknown>;
+  binding?: string;
+  executionState?: "not started" | "started" | "completed" | "uncertain";
   id: string;
   conversationId: string;
   messageId: string;
@@ -217,6 +228,19 @@ export interface Database {
   records: BusinessRecord[];
   diagnostics: Diagnostics;
   preferences: Preferences;
-  updateStatus: "idle" | "available" | "downloading" | "restart required";
+  updateStatus:
+    | "idle"
+    | "available"
+    | "downloading"
+    | "restart required"
+    | "checking"
+    | "up to date"
+    | "failed";
+  runtime?: {
+    mode: "desktop";
+    version: string;
+    notice: string;
+    updateError?: string;
+  };
   revision: number;
 }

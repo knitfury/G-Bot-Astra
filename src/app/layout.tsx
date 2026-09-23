@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Providers } from "./providers";
 import "@/styles/globals.css";
 import "@/styles/product.css";
+export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "G-Bot — Your business, working together",
   description:

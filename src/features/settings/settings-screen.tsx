@@ -15,6 +15,7 @@ import {
 import { useAction, useSnapshot } from "@/hooks/use-services";
 import { useWorkspace } from "@/stores/workspace";
 import { themeColors, appearances } from "@/lib/theme";
+import { DesktopSettings } from "./desktop-settings";
 import { services } from "@/services";
 import type { Diagnostics } from "@/types/domain";
 import {
@@ -140,7 +141,10 @@ export function SettingsScreen() {
           ))}
         </nav>
         <section className="settings-content">
-          {tab === "Appearance" ? (
+          {data.runtime &&
+          ["Security & Privacy", "Advanced", "About"].includes(tab) ? (
+            <DesktopSettings tab={tab} data={data} />
+          ) : tab === "Appearance" ? (
             <>
               <h2>Your workspace, in your colors.</h2>
               <p>Choose your color, then the light that suits your day.</p>
@@ -246,7 +250,7 @@ export function SettingsScreen() {
               <h2>Everyday preferences</h2>
               <Toggle
                 label="Open workspace on startup"
-                description="Saved preference for the future desktop app; browser startup is unchanged."
+                description={data.runtime ? "Saved preference. Automatic login-item launch is not enabled in this build." : "Saved preference for the future desktop app; browser startup is unchanged."}
                 checked={data.preferences.startup}
                 onChange={(v) =>
                   run(() => services.account.preferences({ startup: v }))
@@ -254,7 +258,7 @@ export function SettingsScreen() {
               />
               <Toggle
                 label="Desktop notifications"
-                description="Mock preference. No operating-system notifications are sent in Phase 1."
+                description={data.runtime ? "Saved preference. Operating-system notifications are not enabled in this build." : "Mock preference. No operating-system notifications are sent in Phase 1."}
                 checked={data.preferences.notifications}
                 onChange={(v) =>
                   run(() => services.account.preferences({ notifications: v }))

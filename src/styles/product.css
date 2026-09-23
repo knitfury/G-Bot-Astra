@@ -1572,6 +1572,12 @@
   }
 }
 @media (max-width: 1100px) {
+  /* Hide desktop columns before hydration so chat never starts squeezed offscreen. */
+  .workspace-columns > .business-pane,
+  .workspace-columns > .pane-resizer {
+    display: none;
+  }
+
   .workspace-main {
     padding: 14px;
   }

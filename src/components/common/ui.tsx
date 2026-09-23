@@ -1,4 +1,5 @@
 "use client";
+import { useDesktop } from "@/hooks/use-desktop";
 import {
   CircleNotch,
   WarningCircle,
@@ -166,9 +167,13 @@ export function Notice({ children }: { children: React.ReactNode }) {
   );
 }
 export function MockNote() {
+  const desktop = useDesktop();
   return (
     <span className="mock-note">
-      <Lock size={12} /> Demo environment · no live actions
+      <Lock size={12} />{" "}
+      {desktop
+        ? "Local workspace · live integrations"
+        : "Demo environment · no live actions"}
     </span>
   );
 }

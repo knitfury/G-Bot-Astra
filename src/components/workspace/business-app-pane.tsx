@@ -186,6 +186,36 @@ function RecordDetail({ record: r }: { record: BusinessRecord }) {
     </div>
   );
 }
+function RemoteContext({ connection }: { connection: MCPConnection }) {
+  return (
+    <div className="stack" style={{ padding: 16 }}>
+      <span className="eyebrow">CONNECTED CAPABILITIES</span>
+      <p className="tiny muted">
+        Ask G-Bot to retrieve context using these tools. This pane does not
+        limit which connected apps it can use.
+      </p>
+      {connection.tools.map((t) => (
+        <div className="panel stack" key={t.id}>
+          <h3>{t.label}</h3>
+          <p className="tiny">{t.description}</p>
+          <Badge tone={t.enabled ? "success" : "neutral"}>
+            {t.enabled
+              ? t.requiresApproval
+                ? "Approval before changes"
+                : "Read access enabled"
+              : "Permission disabled"}
+          </Badge>
+        </div>
+      ))}
+      {!connection.tools.length && <p>No tools discovered.</p>}
+      <Button asChild size="sm">
+        <Link href={`/connections/${connection.id}`}>
+          Manage tool permissions
+        </Link>
+      </Button>
+    </div>
+  );
+}
 export function BusinessAppPane({
   side,
   onClose,
@@ -290,10 +320,14 @@ export function BusinessAppPane({
       )}
       <div className="pane-content">
         {connection && available ? (
-          <Records
-            key={`${connection.id}-${refresh}`}
-            connection={connection}
-          />
+          data.runtime ? (
+            <RemoteContext connection={connection} />
+          ) : (
+            <Records
+              key={`${connection.id}-${refresh}`}
+              connection={connection}
+            />
+          )
         ) : (
           <Empty
             title={
@@ -311,7 +345,11 @@ export function BusinessAppPane({
       </div>
       <footer className="pane-footer">
         <span className={`health-dot ${!available ? "inactive" : ""}`} />
-        {available ? "Connected · simulated context" : "Context paused"}
+        {available
+          ? data.runtime
+            ? "Connected · MCP capabilities"
+            : "Connected · simulated context"
+          : "Context paused"}
         <span className="grow" />
         <EnvelopeSimple size={12} />
       </footer>
