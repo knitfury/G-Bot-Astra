@@ -15,6 +15,7 @@ import {
 import { useAction, useSnapshot } from "@/hooks/use-services";
 import { useWorkspace } from "@/stores/workspace";
 import { themeColors, appearances } from "@/lib/theme";
+import { DesktopSettings } from "./desktop-settings";
 import { services } from "@/services";
 import type { Diagnostics } from "@/types/domain";
 import {
@@ -140,7 +141,10 @@ export function SettingsScreen() {
           ))}
         </nav>
         <section className="settings-content">
-          {tab === "Appearance" ? (
+          {data.runtime &&
+          ["Security & Privacy", "Advanced", "About"].includes(tab) ? (
+            <DesktopSettings tab={tab} data={data} />
+          ) : tab === "Appearance" ? (
             <>
               <h2>Your workspace, in your colors.</h2>
               <p>Choose your color, then the light that suits your day.</p>

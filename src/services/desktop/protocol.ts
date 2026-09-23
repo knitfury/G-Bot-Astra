@@ -1,0 +1,47 @@
+import type { Services } from "../contracts";
+import type { Attachment } from "../../types/domain";
+type Groups = Exclude<
+  keyof Services,
+  "snapshot" | "hydrate" | "subscribe" | "attachments"
+>;
+type UnionToIntersection<U> = (
+  U extends unknown ? (x: U) => void : never
+) extends (x: infer I) => void
+  ? I
+  : never;
+type GroupCalls = UnionToIntersection<
+  {
+    [G in Groups]: {
+      [M in keyof Services[G] as `${G}.${M & string}`]: Services[G][M];
+    };
+  }[Groups]
+>;
+export type Calls = GroupCalls & {
+  snapshot: () => ReturnType<Services["snapshot"]>;
+  "attachments.process": (file: {
+    name: string;
+    type: string;
+    bytes: number[];
+  }) => Promise<Attachment>;
+  "attachments.url": Services["attachments"]["url"];
+  "desktop.pickFiles": () => Promise<Attachment[]>;
+  "desktop.readPreferences": () => Promise<string | null>;
+  "desktop.savePreferences": (value: string | null) => Promise<void>;
+  "desktop.installUpdate": () => Promise<void>;
+};
+export type Operation = keyof Calls;
+export type Result<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: { code: string; message: string } };
+export interface DesktopBridge {
+  call<K extends Operation>(
+    operation: K,
+    args: Parameters<Calls[K]>,
+  ): Promise<Result<Awaited<ReturnType<Calls[K]>>>>;
+  subscribe(listener: () => void): () => void;
+}
+declare global {
+  interface Window {
+    gbot?: DesktopBridge;
+  }
+}

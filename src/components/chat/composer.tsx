@@ -12,6 +12,7 @@ import {
   CaretDown,
   FileText,
 } from "@phosphor-icons/react";
+import { desktopCall, isDesktop } from "@/services/desktop/client";
 import { services } from "@/services";
 import { useSnapshot, useAction } from "@/hooks/use-services";
 import { useWorkspace } from "@/stores/workspace";
@@ -249,7 +250,19 @@ export function ChatComposer({
               size="icon"
               variant="ghost"
               aria-label="Attach file"
-              onClick={() => file.current?.click()}
+              onClick={() => {
+                if (!isDesktop()) {
+                  file.current?.click();
+                  return;
+                }
+                void desktopCall("desktop.pickFiles")
+                  .then((files) =>
+                    setAttachments((current) =>
+                      [...current, ...files].slice(0, 5),
+                    ),
+                  )
+                  .catch((e) => setError(e.message));
+              }}
             >
               <Paperclip size={19} />
             </Button>
@@ -358,7 +371,11 @@ export function ChatComposer({
         open={urlOpen}
         onOpenChange={setUrlOpen}
         title="Attach a link"
-        description="Add a URL as context. Page fetching is simulated in Phase 1."
+        description={
+          data?.runtime
+            ? "Share this link with your selected AI provider. G-Bot does not automatically fetch the page."
+            : "Add a URL as context. Page fetching is simulated in Phase 1."
+        }
       >
         <form
           className="stack"

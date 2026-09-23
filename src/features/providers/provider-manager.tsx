@@ -14,6 +14,7 @@ import {
   ArrowSquareOut,
 } from "@phosphor-icons/react";
 import { useAction, useSnapshot } from "@/hooks/use-services";
+import { useDesktop } from "@/hooks/use-desktop";
 import { services } from "@/services";
 import type {
   AIProviderConnection,
@@ -76,6 +77,7 @@ export function ProviderForm({
   initialType?: ProviderType;
 }) {
   const action = useAction();
+  const desktop = useDesktop();
   const [models, setModels] = useState<string[]>([]);
   const {
     register,
@@ -87,7 +89,16 @@ export function ProviderForm({
     resolver: zodResolver(providerSchema),
     defaultValues: provider
       ? { ...provider, key: "" }
-      : { ...defaults, type: initialType || defaults.type },
+      : {
+          ...defaults,
+          type: initialType || defaults.type,
+          baseUrl:
+            initialType === "Anthropic-compatible"
+              ? "https://api.anthropic.com"
+              : initialType === "Gemini-compatible"
+                ? "https://generativelanguage.googleapis.com"
+                : defaults.baseUrl,
+        },
   });
   const type = watch("type");
   async function test(v: ProviderInput) {
@@ -109,8 +120,9 @@ export function ProviderForm({
       <div className="provider-tip">
         <Key size={18} />
         <p>
-          Bring your own provider relationship. In this demo, use any key with
-          8+ characters. Keys are discarded after the simulated test.
+          {desktop
+            ? "Requests go directly to your provider. Credentials and custom headers are protected by your OS. Testing sends a short request and may incur provider charges."
+            : "Bring your own provider relationship. In this demo, use any key with 8+ characters. Keys are discarded after the simulated test."}
         </p>
       </div>
       <label className="field">
@@ -165,7 +177,11 @@ export function ProviderForm({
         )}
       </label>
       <label className="field">
-        {provider ? "Replacement demo key" : "Demo API key / token"}
+        {desktop
+          ? "API key / token (blank keeps saved credential)"
+          : provider
+            ? "Replacement demo key"
+            : "Demo API key / token"}
         <input
           type="password"
           autoComplete="off"
@@ -173,7 +189,9 @@ export function ProviderForm({
           placeholder="demo-key-1234"
         />
         <span className="field-help">
-          Never enter a real secret. Saved credentials are always masked.
+          {desktop
+            ? "Stored values are never returned to this form. Enter a new value to replace them."
+            : "Never enter a real secret. Saved credentials are always masked."}
         </span>
       </label>
       {type === "Generic REST" && (
@@ -237,7 +255,11 @@ export function ProviderForm({
       {models.length > 0 && (
         <Notice>
           <div>
-            <strong>Connection test passed · simulated</strong>
+            <strong>
+              {desktop
+                ? "Connection test passed"
+                : "Connection test passed · simulated"}
+            </strong>
             <label className="field">
               Discovered models
               <select
@@ -415,7 +437,10 @@ export function ProviderManager({ embedded = false }: { embedded?: boolean }) {
       )}
       {action.error && <ErrorState message={action.error.message} />}
       <div className="provider-footnote">
-        <ArrowSquareOut size={15} /> Provider requests are simulated in Phase 1.
+        <ArrowSquareOut size={15} />{" "}
+        {data.runtime
+          ? "Provider requests leave this device directly for your chosen service."
+          : "Provider requests are simulated in Phase 1."}
         No external inference is performed.
       </div>
       <Dialog

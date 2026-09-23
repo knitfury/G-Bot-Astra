@@ -102,7 +102,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {active.length} apps connected
             </span>
             <Link href="/settings" className="top-demo">
-              Phase 1 · Demo
+              {data.runtime ? "Desktop · Local" : "Phase 1 · Demo"}
             </Link>
             <Button
               size="sm"
@@ -116,6 +116,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
         </header>
+        {data.runtime && (
+          <div className="offline-banner" role="status">
+            {data.runtime.notice}
+          </div>
+        )}
         {data.diagnostics.offline && (
           <div className="offline-banner">
             Offline simulation · Your history remains available.{" "}

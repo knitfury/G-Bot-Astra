@@ -1,4 +1,4 @@
-name: Verify G-Bot frontend
+name: Verify G-Bot frontend and desktop
 on:
   push:
   pull_request:
@@ -17,6 +17,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:desktop
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
@@ -27,4 +28,30 @@ jobs:
           path: |
             playwright-report/
             test-results/
+          retention-days: 7
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run desktop:build
+      - run: npm run test:electron
+      - run: npx electron-builder --dir --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-review-${{ matrix.os }}
+          path: test-results-electron/
           retention-days: 7

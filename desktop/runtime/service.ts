@@ -1,0 +1,583 @@
+import { randomUUID } from "node:crypto";
+import type { Services } from "../../src/services/contracts";
+import type {
+  Database,
+  ProviderInput,
+  MCPConnection,
+} from "../../src/types/domain";
+import { initialDatabase } from "../../src/data/mocks/seed";
+import { entitlementFor, slotAvailable } from "../../src/lib/entitlements";
+import { AtomicStore, SecretVault } from "./storage";
+import { DomainError, safeError } from "./errors";
+import { remoteURL, parseHeaders } from "./security";
+import { Orchestrator } from "./orchestrator";
+import { Attachments } from "./attachments";
+import type { Inference } from "../adapters/providers";
+import type { MCPRuntime } from "../adapters/mcp";
+const stamp = () => new Date().toISOString();
+export function localDatabase(): Database {
+  const db = initialDatabase();
+  db.records = [];
+  db.runtime = {
+    mode: "desktop",
+    version: "0.2.0",
+    notice:
+      "Local profile · Development entitlements · Requests go directly to your AI provider and MCP servers.",
+  };
+  return db;
+}
+export function databaseShape(value: unknown): value is Database {
+  if (!value || typeof value !== "object") return false;
+  const d = value as Database;
+  return (
+    d.schema === 1 &&
+    !!d.entitlement &&
+    ["free", "starter", "business"].includes(d.entitlement.plan) &&
+    Array.isArray(d.providers) &&
+    Array.isArray(d.connections) &&
+    Array.isArray(d.conversations) &&
+    d.conversations.every(
+      (c) => typeof c.id === "string" && Array.isArray(c.messages),
+    ) &&
+    Array.isArray(d.approvals) &&
+    Array.isArray(d.activity) &&
+    !!d.preferences
+  );
+}
+export class Runtime {
+  db: Database = localDatabase();
+  readonly attachments = new Attachments();
+  readonly engine: Orchestrator;
+  private listeners = new Set<() => void>();
+  readonly services: Services;
+  constructor(
+    private store: AtomicStore<Database>,
+    readonly vault: SecretVault,
+    private inference: Inference,
+    readonly mcp: MCPRuntime,
+    private updates: { check(): Promise<void>; download(): Promise<void> },
+  ) {
+    this.engine = new Orchestrator(
+      () => this.db,
+      () => this.save(),
+      () => this.notify(),
+      inference,
+      mcp,
+      (m) => this.provider(m),
+      (a) => this.attachments.context(a),
+    );
+    const find = (id: string) => {
+      const c = this.db.connections.find((c) => c.id === id);
+      if (!c)
+        throw new DomainError("INVALID_ARGUMENTS", "Connection not found.");
+      return c;
+    };
+    const profile = async (name: string, email: string) => {
+      this.db.user = {
+        id: randomUUID(),
+        name,
+        email,
+        avatar: "",
+        status: "active",
+        createdAt: stamp(),
+      };
+      await this.save();
+      return this.db.user;
+    };
+    this.services = {
+      hydrate: () => {},
+      subscribe: (fn) => {
+        this.listeners.add(fn);
+        return () => {
+          this.listeners.delete(fn);
+        };
+      },
+      snapshot: async () => structuredClone(this.db),
+      auth: {
+        login: (email) => profile(email.split("@")[0], email),
+        signup: (name, email) => profile(name, email),
+        resetPassword: async () => {
+          throw new DomainError(
+            "CAPABILITY",
+            "Local profiles do not have a cloud password. Cloud identity is not configured.",
+          );
+        },
+        demo: async () => {
+          await profile("Local workspace", "");
+        },
+        logout: async () => {
+          this.engine.stopAll();
+          await this.services.secureStorage.clear();
+          this.db.user = null;
+          await this.save();
+        },
+      },
+      account: {
+        get: async () => this.db.user,
+        update: async (name) => {
+          if (this.db.user) this.db.user.name = name;
+          await this.save();
+        },
+        clearHistory: async () => {
+          this.engine.stopAll();
+          this.db.conversations = [];
+          this.db.approvals = [];
+          this.db.activity = [];
+          await this.save();
+        },
+        reset: async () => {
+          this.engine.stopAll();
+          await this.services.secureStorage.clear();
+          this.db = localDatabase();
+          await this.save();
+        },
+        preferences: async (values) => {
+          Object.assign(this.db.preferences, values);
+          await this.save();
+        },
+      },
+      entitlements: {
+        get: async () => this.db.entitlement,
+        change: async (plan) => {
+          this.db.entitlement = entitlementFor(plan);
+          this.event("", "Development plan changed", "completed");
+          await this.save();
+        },
+        expire: async (expired) => {
+          this.db.entitlement.status = expired ? "expired" : "active";
+          await this.save();
+        },
+      },
+      providers: {
+        list: async () => this.db.providers,
+        test: async (input) => {
+          await this.testProvider(input);
+          return [input.model];
+        },
+        save: async (input, id) => {
+          const prior = this.db.providers.find((p) => p.id === id);
+          const providerId = id ?? randomUUID();
+          if (prior && prior.baseUrl !== input.baseUrl && !input.key)
+            throw new DomainError(
+              "PROVIDER_AUTH",
+              "Enter a credential again when changing the provider endpoint.",
+            );
+          const resolved = await this.withCredential(input, prior?.id);
+          await this.testProvider(resolved);
+          await vault.set(
+            `${providerId}:provider`,
+            JSON.stringify({ key: resolved.key, headers: resolved.headers }),
+          );
+          const { key, ...config } = input;
+          void key;
+          this.db.providers = this.db.providers.filter(
+            (p) => p.id !== providerId,
+          );
+          this.db.providers.push({
+            ...config,
+            headers: "{}",
+            id: providerId,
+            status: "connected",
+            maskedCredential:
+              resolved.auth === "None"
+                ? "No credential"
+                : "Protected by your OS ••••",
+            createdAt: prior?.createdAt ?? stamp(),
+            updatedAt: stamp(),
+            lastTest: stamp(),
+            models: [
+              {
+                id: `${providerId}-0`,
+                providerId,
+                identifier: input.model,
+                name: input.model,
+                capabilities:
+                  input.tools && input.type !== "Generic REST"
+                    ? ["text", "tools"]
+                    : ["text"],
+                context: 0,
+                enabled: true,
+                default: true,
+              },
+            ],
+          });
+          this.event("", "AI provider connected", "completed");
+          await this.save();
+        },
+        testSaved: async (id) => {
+          const p = this.db.providers.find((p) => p.id === id);
+          if (!p)
+            throw new DomainError("INVALID_ARGUMENTS", "Provider not found.");
+          try {
+            await this.testProvider(
+              await this.withCredential({ ...p, key: "" }, id),
+            );
+            p.status = "connected";
+            p.lastTest = stamp();
+          } catch (e) {
+            p.status = "error";
+            throw e;
+          } finally {
+            await this.save();
+          }
+        },
+        remove: async (id) => {
+          await vault.delete(`${id}:provider`);
+          this.db.providers = this.db.providers.filter((p) => p.id !== id);
+          await this.save();
+        },
+      },
+      connections: {
+        list: async () => this.db.connections,
+        save: async (input, id) => {
+          remoteURL(input.url);
+          if (!slotAvailable(this.db.entitlement, input.slot))
+            throw new DomainError(
+              "ENTITLEMENT",
+              "This connection slot requires a different plan.",
+            );
+          if (
+            this.db.connections.some(
+              (c) => c.slot === input.slot && c.id !== id,
+            )
+          )
+            throw new DomainError(
+              "INVALID_ARGUMENTS",
+              "This slot is already configured.",
+            );
+          const cid = id ?? randomUUID(),
+            prior = this.db.connections.find((c) => c.id === cid);
+          if (prior) await mcp.disconnect(cid);
+          if (
+            prior &&
+            (prior.url !== input.url ||
+              prior.auth !== input.auth ||
+              prior.oauthClientId !== input.oauthClientId)
+          )
+            for (const suffix of ["manual", "oauth-tokens", "oauth-client"])
+              await vault.delete(`${cid}:${suffix}`);
+          const headers = parseHeaders(input.headers ?? "{}");
+          if (input.auth === "Token") {
+            if (!input.token && !vault.has(`${cid}:manual`))
+              throw new DomainError("MCP_AUTH", "Enter a token or API key.");
+            if (input.token) {
+              const name = input.authHeader || "Authorization";
+              Object.assign(
+                headers,
+                parseHeaders(
+                  JSON.stringify({
+                    [name]:
+                      name.toLowerCase() === "authorization"
+                        ? `Bearer ${input.token}`
+                        : input.token,
+                  }),
+                ),
+              );
+            }
+          }
+          if (input.token || Object.keys(headers).length)
+            await vault.set(`${cid}:manual`, JSON.stringify(headers));
+          const unchanged =
+            prior?.url === input.url && prior.auth === input.auth;
+          this.db.connections = this.db.connections.filter((c) => c.id !== cid);
+          this.db.connections.push({
+            id: cid,
+            slot: input.slot,
+            name: input.name,
+            url: input.url,
+            auth: input.auth,
+            authHeader: input.authHeader,
+            oauthClientId: input.oauthClientId,
+            category: input.category,
+            icon: input.category,
+            status: "disconnected",
+            enabled: false,
+            tools: unchanged ? prior.tools : [],
+            lastConnected: "",
+            error: "",
+            permissionSummary:
+              "New or changed tools are disabled until you review and enable them.",
+            maskedCredential:
+              input.auth === "None" ? "No credential" : "Protected credential",
+          });
+          await this.save();
+          return cid;
+        },
+        connect: async (id, consent) => {
+          const c = find(id);
+          if (!consent)
+            throw new DomainError(
+              "INVALID_ARGUMENTS",
+              "Consent is required to discover tools.",
+            );
+          if (!slotAvailable(this.db.entitlement, c.slot))
+            throw new DomainError(
+              "ENTITLEMENT",
+              "This slot is locked by your current plan.",
+            );
+          if (["connecting", "authenticating"].includes(c.status))
+            throw new DomainError(
+              "MCP_PROTOCOL",
+              "Connection is already in progress.",
+            );
+          c.status = "connecting";
+          c.error = "";
+          await this.save();
+          try {
+            c.tools = await mcp.connect(c);
+            c.status = "connected";
+            c.enabled = true;
+            c.lastConnected = stamp();
+            this.event(
+              id,
+              "MCP tools discovered; review permissions",
+              "completed",
+            );
+          } catch (e) {
+            const error = safeError(e);
+            c.status =
+              error.code === "MCP_AUTH" ? "needs authentication" : "error";
+            c.enabled = false;
+            c.error = error.message;
+            this.event(id, "MCP connection failed", "failed");
+            throw error;
+          } finally {
+            await this.save();
+          }
+        },
+        disconnect: async (id) => {
+          const c = find(id);
+          await mcp.disconnect(id);
+          for (const suffix of ["manual", "oauth-tokens", "oauth-client"])
+            await vault.delete(`${id}:${suffix}`);
+          c.status = "disconnected";
+          c.enabled = false;
+          c.maskedCredential = "Credential removed";
+          this.event(id, "MCP disconnected; credentials removed", "completed");
+          await this.save();
+        },
+        remove: async (id) => {
+          await this.services.connections.disconnect(id);
+          this.db.connections = this.db.connections.filter((c) => c.id !== id);
+          await this.save();
+        },
+        records: async (category) =>
+          this.db.connections
+            .filter((c) => c.category === category)
+            .flatMap((c) =>
+              c.tools.map((t) => ({
+                id: t.id,
+                category,
+                customer: c.name,
+                company: "Remote MCP",
+                title: t.label,
+                subtitle: t.enabled ? "Tool enabled" : "Permission disabled",
+                body: t.description,
+                metadata: {
+                  Connection: c.name,
+                  Access: t.requiresApproval
+                    ? "Approval before changes"
+                    : "Read only",
+                  Status: c.status,
+                },
+                status: t.enabled ? "Enabled" : "Disabled",
+              })),
+            ),
+      },
+      tools: {
+        toggle: async (cid, tid, enabled) => {
+          const c = find(cid),
+            t = c.tools.find((t) => t.id === tid);
+          if (!t)
+            throw new DomainError(
+              "TOOL_UNAVAILABLE",
+              "Tool not found. Refresh discovery.",
+            );
+          t.enabled = enabled;
+          this.event(
+            cid,
+            enabled ? "Tool permission enabled" : "Tool permission disabled",
+            "completed",
+          );
+          await this.save();
+        },
+      },
+      conversations: {
+        list: async () => this.db.conversations,
+        create: async (model) => {
+          const id = randomUUID();
+          this.db.conversations.unshift({
+            id,
+            title: "New conversation",
+            createdAt: stamp(),
+            updatedAt: stamp(),
+            model,
+            messages: [],
+          });
+          await this.save();
+          return id;
+        },
+        rename: async (id, title) => {
+          const c = this.db.conversations.find((c) => c.id === id);
+          if (c) c.title = title;
+          await this.save();
+        },
+        remove: async (id) => {
+          this.engine.stop(id);
+          this.db.conversations = this.db.conversations.filter(
+            (c) => c.id !== id,
+          );
+          this.db.approvals = this.db.approvals.filter(
+            (a) => a.conversationId !== id,
+          );
+          await this.save();
+        },
+        feedback: async (cid, mid, value) => {
+          const m = this.db.conversations
+            .find((c) => c.id === cid)
+            ?.messages.find((m) => m.id === mid);
+          if (m) m.feedback = value;
+          await this.save();
+        },
+      },
+      execution: {
+        run: (...args) => this.engine.run(...args),
+        stop: (id) => this.engine.stop(id),
+        retry: (id) => this.engine.retry(id),
+      },
+      approvals: { resolve: (...args) => this.engine.resolve(...args) },
+      activity: { list: async () => this.db.activity },
+      attachments: {
+        process: async (file) =>
+          this.attachments.ingest(
+            file.name,
+            file.type,
+            new Uint8Array(await file.arrayBuffer()),
+          ),
+        url: async (url) => this.attachments.url(url),
+      },
+      secureStorage: {
+        clear: async () => {
+          this.engine.stopAll();
+          for (const c of this.db.connections) {
+            await mcp.disconnect(c.id);
+            c.enabled = false;
+            c.status = "disconnected";
+            c.maskedCredential = "Credential removed";
+          }
+          for (const p of this.db.providers) {
+            p.status = "disconnected";
+            p.maskedCredential = "Credential removed";
+          }
+          await vault.clear();
+          await this.save();
+        },
+        status: async () =>
+          "Credentials are encrypted using your operating system's secure storage. No credential-read operation is exposed to the renderer.",
+      },
+      updates,
+      diagnostics: {
+        set: async () => {
+          throw new DomainError(
+            "CAPABILITY",
+            "Simulation controls are available in browser demo mode only.",
+          );
+        },
+      },
+    };
+  }
+  async init() {
+    await this.vault.init();
+    this.db = await this.store.read();
+    this.db.runtime = {
+      mode: "desktop",
+      version: "0.2.0",
+      notice: this.store.recovery || localDatabase().runtime!.notice,
+    };
+    for (const c of this.db.connections) {
+      c.status = "disconnected";
+      c.enabled = false;
+    }
+    for (const c of this.db.conversations)
+      for (const m of c.messages)
+        if (["running", "approval required"].includes(m.status)) {
+          m.status = "cancelled";
+          m.content +=
+            "\n\nInterrupted by restart. Check external activity before repeating consequential actions.";
+          for (const t of m.tools)
+            if (t.status === "running") t.status = "failed";
+        }
+    for (const a of this.db.approvals) {
+      if (a.status === "pending") a.status = "cancelled";
+      if (a.executionState === "started") a.executionState = "uncertain";
+    }
+    await this.save();
+  }
+  notify() {
+    for (const listener of this.listeners) listener();
+  }
+  async save() {
+    this.db.revision++;
+    await this.store.write(this.db);
+    this.notify();
+  }
+  event(
+    connectionId: string,
+    action: string,
+    outcome: "completed" | "failed" | "running",
+  ) {
+    this.db.activity.unshift({
+      id: randomUUID(),
+      timestamp: stamp(),
+      actor: "G-Bot",
+      conversationId: "",
+      connectionId,
+      tool: "",
+      action,
+      outcome,
+      approvalRequired: false,
+      detail: "",
+    });
+  }
+  async withCredential(
+    input: ProviderInput,
+    id?: string,
+  ): Promise<ProviderInput> {
+    const saved = id ? await this.vault.get(`${id}:provider`) : undefined;
+    const secret = saved
+      ? (JSON.parse(saved) as { key: string; headers: string })
+      : undefined;
+    return {
+      ...input,
+      key: input.key || secret?.key || "",
+      headers:
+        input.headers === "{}" && secret ? secret.headers : input.headers,
+    };
+  }
+  async provider(model: string) {
+    const p = this.db.providers.find(
+      (p) =>
+        p.status === "connected" &&
+        p.models.some((m) => m.id === model && m.enabled),
+    );
+    if (!p)
+      throw new DomainError(
+        "PROVIDER_AUTH",
+        "Select and test an AI provider first.",
+      );
+    return this.withCredential({ ...p, key: "" }, p.id);
+  }
+  private async testProvider(input: ProviderInput) {
+    remoteURL(input.baseUrl);
+    parseHeaders(input.headers);
+    if (input.auth !== "None" && !input.key)
+      throw new DomainError("PROVIDER_AUTH", "Enter a provider credential.");
+    await this.inference.generate(
+      input,
+      [{ role: "user", text: "Reply with OK." }],
+      [],
+      AbortSignal.timeout(30_000),
+      () => {},
+    );
+  }
+}

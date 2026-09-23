@@ -29,7 +29,9 @@ export function ApprovalCard({ approval: a }: { approval: ApprovalRequest }) {
       </div>
       <p>{a.consequence}</p>
       <div className="approval-fields">
-        {editing && a.status === "pending" ? (
+        {a.arguments ? (
+          <pre className="code">{JSON.stringify(a.arguments, null, 2)}</pre>
+        ) : editing && a.status === "pending" ? (
           <>
             <label className="field">
               Recipient
@@ -90,17 +92,21 @@ export function ApprovalCard({ approval: a }: { approval: ApprovalRequest }) {
             <Check size={16} />
             {action.isPending
               ? "Completing…"
-              : a.action.includes("ticket")
-                ? "Approve & create ticket"
-                : "Approve & send"}
+              : a.arguments
+                ? "Approve action"
+                : a.action.includes("ticket")
+                  ? "Approve & create ticket"
+                  : "Approve & send"}
           </Button>
-          <Button
-            disabled={action.isPending}
-            onClick={() => setEditing(!editing)}
-          >
-            <PencilSimple size={15} />
-            {editing ? "Cancel edit" : "Edit"}
-          </Button>
+          {!a.arguments && (
+            <Button
+              disabled={action.isPending}
+              onClick={() => setEditing(!editing)}
+            >
+              <PencilSimple size={15} />
+              {editing ? "Cancel edit" : "Edit"}
+            </Button>
+          )}
           <Button
             variant="ghost"
             disabled={action.isPending}

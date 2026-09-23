@@ -42,7 +42,15 @@ export interface AIProviderService {
 export interface MCPConnectionService {
   list(): Promise<MCPConnection[]>;
   save(
-    input: Pick<MCPConnection, "name" | "url" | "category" | "auth" | "slot">,
+    input: Pick<
+      MCPConnection,
+      "name" | "url" | "category" | "auth" | "slot"
+    > & {
+      token?: string;
+      headers?: string;
+      authHeader?: string;
+      oauthClientId?: string;
+    },
     id?: string,
   ): Promise<string>;
   connect(id: string, consent: boolean): Promise<void>;

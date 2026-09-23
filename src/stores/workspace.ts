@@ -1,7 +1,8 @@
 "use client";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type { ThemeColor, Appearance, WorkspacePane } from "@/types/domain";
+import { desktopCall, isDesktop } from "@/services/desktop/client";
 import { resolveTheme } from "@/lib/theme";
 interface WorkspaceState {
   color: ThemeColor;
@@ -56,6 +57,20 @@ export const useWorkspace = create<WorkspaceState>()(
     {
       name: "gbot-workspace-v1",
       version: 1,
+      storage: createJSONStorage(() => ({
+        getItem: (name) =>
+          isDesktop()
+            ? desktopCall("desktop.readPreferences")
+            : localStorage.getItem(name),
+        setItem: (name, value) =>
+          isDesktop()
+            ? desktopCall("desktop.savePreferences", value)
+            : localStorage.setItem(name, value),
+        removeItem: (name) =>
+          isDesktop()
+            ? desktopCall("desktop.savePreferences", null)
+            : localStorage.removeItem(name),
+      })),
       migrate: (persisted) => {
         const { theme: _legacy, ...rest } = (persisted ?? {}) as Record<
           string,

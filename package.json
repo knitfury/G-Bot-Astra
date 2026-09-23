@@ -1,6 +1,6 @@
 {
   "name": "g-bot-astra",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
@@ -10,17 +10,28 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"tests/**/*.ts\" \"*.{json,ts,mjs}\"",
-    "test:prepare-browser": "node scripts/prepare-browser.mjs"
+    "test:prepare-browser": "node scripts/prepare-browser.mjs",
+    "desktop:compile": "node scripts/build-desktop.mjs",
+    "desktop:build": "npm run build && npm run desktop:compile",
+    "desktop:start": "electron .",
+    "desktop:package": "npm run desktop:build && electron-builder --dir",
+    "desktop:dist": "npm run desktop:build && electron-builder",
+    "test:desktop": "node --import tsx --test tests/desktop/*.test.ts",
+    "desktop:demo": "electron . --demo",
+    "test:electron": "node scripts/smoke-electron.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",
     "@tailwindcss/postcss": "4.2.1",
     "@tanstack/react-query": "^5.90.0",
+    "ajv": "^8.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.8.9",
     "framer-motion": "^12.23.0",
     "next": "15.5.25",
     "react": "19.2.6",
@@ -39,11 +50,61 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^44.4.4",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "prettier": "^3.9.8",
     "tsx": "^4.20.0",
     "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=20.9.0"
+  },
+  "main": "desktop-dist/main.cjs",
+  "description": "Local-first AI business assistant",
+  "author": "G-Bot contributors",
+  "build": {
+    "appId": "com.gbot.astra",
+    "productName": "G-Bot",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop-dist/**",
+      ".next/**",
+      "public/**",
+      "package.json",
+      "next.config.ts",
+      "!node_modules/@sparticuz/**"
+    ],
+    "asarUnpack": [
+      ".next/**"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ]
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "knitfury",
+        "repo": "G-Bot-Astra",
+        "releaseType": "draft"
+      }
+    ]
   }
 }
