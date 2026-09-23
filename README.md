@@ -4,7 +4,7 @@
 
 A local-first Electron AI business workspace with real BYOK providers and remote MCP integrations, plus the preserved deterministic Phase 1 browser demo. G-Bot stays in the center; business apps sit in optional, resizable side panes. Includes onboarding, multiple BYOK providers, eight business-app slots, chat and attachments, cross-app execution, approvals, activity, plan simulation, and five colors with independent light/dark appearance.
 
-![G-Bot desktop workspace](docs/screenshots/workspace.png)
+![G-Bot desktop workspace](docs/screenshots/phase2/orange-light-1440-workspace.webp)
 
 ## Real desktop integrations (Phase 2)
 
