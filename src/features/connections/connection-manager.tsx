@@ -171,11 +171,12 @@ export function ConnectionForm({
                 {...register("token")}
                 type="password"
                 autoComplete="off"
-                placeholder="demo-token-1234"
+                placeholder={desktop ? "Enter credential" : "demo-token-1234"}
               />
               <span className="field-help">
-                {desktop ? "Token / API key" : "Demo token"}s are discarded. Do
-                not use a real credential.
+                {desktop
+                  ? "Encrypted using your operating system’s credential protection."
+                  : "Demo tokens are discarded. Do not use a real credential."}
               </span>
             </label>
           )}
@@ -569,7 +570,11 @@ export function ConnectionDetail({ id }: { id: string }) {
             {!c.tools.length ? (
               <Empty
                 title="No tools discovered"
-                description="Check the endpoint or turn off the no-tools simulation, then reconnect."
+                description={
+                  data.runtime
+                    ? "Check the remote endpoint and reconnect to refresh discovery."
+                    : "Check the endpoint or turn off the no-tools simulation, then reconnect."
+                }
               />
             ) : (
               c.tools.map((t) => (
@@ -638,7 +643,9 @@ export function ConnectionDetail({ id }: { id: string }) {
                 {
                   connectionId: c.id,
                   category: c.category,
-                  transport: "Streamable HTTP (simulated)",
+                  transport: data.runtime
+                    ? "Streamable HTTP"
+                    : "Streamable HTTP (simulated)",
                   tools: c.tools.map((t) => ({
                     name: t.name,
                     risk: t.risk,
@@ -691,7 +698,9 @@ export function ConnectionDetail({ id }: { id: string }) {
           >
             {action.isPending
               ? "Authenticating & discovering…"
-              : "Authorize demo connection"}
+              : data.runtime
+                ? "Reconnect"
+                : "Authorize demo connection"}
           </Button>
         </div>
       </Dialog>

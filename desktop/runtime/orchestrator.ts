@@ -256,6 +256,12 @@ export class Orchestrator {
     if (approved) approved.executionState = "started";
     await this.persist();
     try {
+      const current = this.permitted(call);
+      if (actionBinding(current.c, current.t, call.arguments) !== key)
+        throw new DomainError(
+          "TOOL_UNAVAILABLE",
+          "Tool configuration changed before execution. Request a new action.",
+        );
       const output = await this.mcp.call(
         c,
         t,

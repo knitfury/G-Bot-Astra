@@ -14,6 +14,7 @@ export interface ModelTool {
 export interface ModelCall {
   id: string;
   name: string;
+  thoughtSignature?: string;
   arguments: Record<string, unknown>;
 }
 export interface ImageInput {
@@ -95,7 +96,10 @@ async function boundedJSON(response: Response): Promise<unknown> {
   }
 }
 export class HTTPInference implements Inference {
-  constructor(private request: typeof fetch = fetch) {}
+  constructor(
+    private request: typeof fetch = fetch,
+    private timeoutMs = 90_000,
+  ) {}
   async generate(
     p: ProviderInput,
     turns: Turn[],
@@ -170,11 +174,13 @@ export class HTTPInference implements Inference {
       };
     } else if (p.type === "Anthropic-compatible") {
       url = base + "/v1/messages";
+      stream = true;
       headers["x-api-key"] = p.key;
       headers["anthropic-version"] = "2023-06-01";
       body = {
         model: p.model,
         max_tokens: 4096,
+        stream: true,
         system,
         messages: turns.map((t) =>
           t.role === "tool"
@@ -221,7 +227,9 @@ export class HTTPInference implements Inference {
       };
     } else if (p.type === "Gemini-compatible") {
       url =
-        base + `/v1beta/models/${encodeURIComponent(p.model)}:generateContent`;
+        base +
+        `/v1beta/models/${encodeURIComponent(p.model)}:streamGenerateContent?alt=sse`;
+      stream = true;
       headers["x-goog-api-key"] = p.key;
       body = {
         systemInstruction: { parts: [{ text: system }] },
@@ -244,6 +252,9 @@ export class HTTPInference implements Inference {
                   ...(t.text ? [{ text: t.text }] : []),
                   ...(t.calls ?? []).map((c) => ({
                     functionCall: { name: c.name, args: c.arguments },
+                    ...(c.thoughtSignature
+                      ? { thoughtSignature: c.thoughtSignature }
+                      : {}),
                   })),
                 ],
         })),
@@ -309,7 +320,7 @@ export class HTTPInference implements Inference {
       }
       target[path.at(-1)!] = last;
     }
-    const timeout = AbortSignal.timeout(90_000);
+    const timeout = AbortSignal.timeout(this.timeoutMs);
     let response: Response;
     try {
       response = await this.request(url, {
@@ -338,7 +349,9 @@ export class HTTPInference implements Inference {
         stream &&
         response.headers.get("content-type")?.includes("text/event-stream")
       )
-        return await this.stream(response, delta);
+        return p.type.includes("OpenAI")
+          ? await this.stream(response, delta)
+          : await this.nativeStream(response, p.type, delta);
       const data = object(await boundedJSON(response));
       let result: ModelResult;
       if (p.type.includes("OpenAI")) {
@@ -372,6 +385,7 @@ export class HTTPInference implements Inference {
             content?: {
               parts?: {
                 text?: string;
+                thoughtSignature?: string;
                 functionCall?: { name: string; args: unknown };
               }[];
             };
@@ -390,6 +404,7 @@ export class HTTPInference implements Inference {
                   {
                     id: crypto.randomUUID(),
                     name: p.functionCall.name,
+                    thoughtSignature: p.thoughtSignature,
                     arguments: object(p.functionCall.args),
                   },
                 ]
@@ -427,6 +442,113 @@ export class HTTPInference implements Inference {
       );
     }
   }
+  private async nativeStream(
+    response: Response,
+    type: string,
+    delta: (text: string) => void,
+  ): Promise<ModelResult> {
+    const result: ModelResult = { text: "", calls: [] };
+    const blocks = new Map<
+      number,
+      { id: string; name: string; json: string; input: Record<string, unknown> }
+    >();
+    let complete = false;
+    for await (const data of sse(response)) {
+      if (data === "[DONE]") {
+        complete = true;
+        continue;
+      }
+      let e: Record<string, unknown>;
+      try {
+        e = object(JSON.parse(data));
+      } catch {
+        throw new DomainError("CAPABILITY", "Malformed provider stream.");
+      }
+      if (e.error || e.type === "error")
+        throw new DomainError(
+          "NETWORK",
+          "Provider interrupted the response. Retry the request.",
+        );
+      if (type === "Anthropic-compatible") {
+        if (e.type === "message_stop") complete = true;
+        if (e.type === "content_block_start") {
+          const b = object(e.content_block);
+          if (b.type === "tool_use")
+            blocks.set(Number(e.index), {
+              id: String(b.id),
+              name: String(b.name),
+              json: "",
+              input: object(b.input),
+            });
+        }
+        if (e.type === "content_block_delta") {
+          const d = object(e.delta);
+          if (d.type === "text_delta" && typeof d.text === "string") {
+            result.text += d.text;
+            delta(d.text);
+          }
+          if (d.type === "input_json_delta") {
+            const b = blocks.get(Number(e.index));
+            if (b) b.json += String(d.partial_json);
+          }
+        }
+      } else {
+        const candidates = e.candidates as
+          | {
+              finishReason?: string;
+              content?: {
+                parts?: {
+                  text?: string;
+                  thought?: boolean;
+                  thoughtSignature?: string;
+                  functionCall?: { name: string; args?: unknown };
+                }[];
+              };
+            }[]
+          | undefined;
+        const c = candidates?.[0];
+        if (c?.finishReason) complete = true;
+        for (const p of c?.content?.parts ?? []) {
+          if (typeof p.text === "string" && !p.thought) {
+            result.text += p.text;
+            delta(p.text);
+          }
+          if (p.functionCall)
+            result.calls.push({
+              id: crypto.randomUUID(),
+              name: p.functionCall.name,
+              arguments: object(p.functionCall.args ?? {}),
+              thoughtSignature: p.thoughtSignature,
+            });
+        }
+      }
+    }
+    for (const b of blocks.values()) {
+      let args = b.input;
+      if (b.json) {
+        try {
+          args = object(JSON.parse(b.json));
+        } catch {
+          throw new DomainError(
+            "INVALID_ARGUMENTS",
+            "Malformed streamed tool arguments.",
+          );
+        }
+      }
+      result.calls.push({ id: b.id, name: b.name, arguments: args });
+    }
+    if (!complete)
+      throw new DomainError(
+        "NETWORK",
+        "Provider stream ended before completion. Retry the request.",
+      );
+    if ((!result.text && !result.calls.length) || result.calls.length > 16)
+      throw new DomainError(
+        "CAPABILITY",
+        "Provider returned no usable content or too many tool calls.",
+      );
+    return result;
+  }
   private async stream(
     response: Response,
     delta: (text: string) => void,
@@ -437,7 +559,8 @@ export class HTTPInference implements Inference {
     const decoder = new TextDecoder();
     let buffer = "",
       text = "",
-      total = 0;
+      total = 0,
+      complete = false;
     const pending = new Map<
       number,
       { id: string; name: string; arguments: string }
@@ -458,10 +581,14 @@ export class HTTPInference implements Inference {
       while ((index = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, index).trim();
         buffer = buffer.slice(index + 1);
-        if (!line.startsWith("data:") || line.slice(5).trim() === "[DONE]")
+        if (!line.startsWith("data:")) continue;
+        if (line.slice(5).trim() === "[DONE]") {
+          complete = true;
           continue;
+        }
         let event: {
           choices?: {
+            finish_reason?: string | null;
             delta?: {
               content?: string;
               tool_calls?: {
@@ -477,6 +604,7 @@ export class HTTPInference implements Inference {
         } catch {
           throw new DomainError("CAPABILITY", "Malformed provider stream.");
         }
+        if (event.choices?.[0]?.finish_reason) complete = true;
         const d = event.choices?.[0]?.delta;
         if (d?.content) {
           text += d.content;
@@ -495,6 +623,11 @@ export class HTTPInference implements Inference {
         }
       }
     }
+    if (!complete)
+      throw new DomainError(
+        "NETWORK",
+        "Provider stream ended before completion. Retry the request.",
+      );
     const result = {
       text,
       calls: calls(
@@ -507,5 +640,43 @@ export class HTTPInference implements Inference {
     if (!text && !result.calls.length)
       throw new DomainError("CAPABILITY", "Provider returned an empty stream.");
     return result;
+  }
+}
+
+// Bounded SSE parser shared by native providers; no response payload reaches diagnostics.
+async function* sse(response: Response): AsyncGenerator<string> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new DomainError("CAPABILITY", "Missing response stream.");
+  const decoder = new TextDecoder();
+  let buffer = "",
+    total = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      total += chunk.value.length;
+      if (total > 4_000_000)
+        throw new DomainError(
+          "CAPABILITY",
+          "Response stream exceeded the size limit.",
+        );
+      buffer += decoder
+        .decode(chunk.value, { stream: true })
+        .replaceAll("\r", "");
+      let split;
+      while ((split = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, split);
+        buffer = buffer.slice(split + 2);
+        const data = frame
+          .split("\n")
+          .filter((l) => l.startsWith("data:"))
+          .map((l) => l.slice(5).trimStart())
+          .join("\n");
+        if (data) yield data;
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }

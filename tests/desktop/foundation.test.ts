@@ -127,3 +127,24 @@ test("OAuth validates CSRF state, accepts one loopback callback and stores token
   assert.equal(await oauth.tokens(), undefined);
   oauth.close();
 });
+test("concurrent credential writes do not lose entries", async () => {
+  const { vault } = await vaultFixture();
+  await Promise.all(
+    Array.from({ length: 10 }, (_, i) => vault.set(`key${i}`, `value${i}`)),
+  );
+  for (let i = 0; i < 10; i++)
+    assert.equal(await vault.get(`key${i}`), `value${i}`);
+});
+test("unwrapped legacy data migrates to a versioned envelope", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "gbot-migration-"));
+  await writeFile(
+    join(dir, "legacy"),
+    JSON.stringify({ theme: "orange-dark" }),
+  );
+  const store = new AtomicStore(dir, "legacy", () => ({}), stringMap);
+  assert.deepEqual(await store.read(), { theme: "orange-dark" });
+  assert.equal(
+    JSON.parse(await readFile(join(dir, "legacy"), "utf8")).version,
+    1,
+  );
+});

@@ -9,6 +9,8 @@ export class Attachments {
   ingest(name: string, type: string, bytes: Uint8Array): Attachment {
     if (bytes.byteLength > 10 * 1024 * 1024)
       throw new DomainError("CAPABILITY", "Maximum file size is 10 MB.");
+    if (this.content.size >= 20)
+      this.content.delete(this.content.keys().next().value!);
     const a: Attachment = {
       id: randomUUID(),
       name: name.slice(0, 240),
@@ -42,7 +44,15 @@ export class Attachments {
         "Use text, CSV, Markdown, PNG, JPEG or WebP. PDF/DOCX extraction is not supported yet.";
       return a;
     }
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    let text: string;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw new DomainError(
+        "CAPABILITY",
+        "Save this text file as UTF-8 and attach it again.",
+      );
+    }
     if (text.length > 200_000)
       throw new DomainError(
         "CAPABILITY",

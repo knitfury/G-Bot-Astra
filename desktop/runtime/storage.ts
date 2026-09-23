@@ -30,6 +30,15 @@ export class AtomicStore<T> {
     }
     try {
       const envelope = JSON.parse(raw);
+      // Explicit legacy migration: unwrapped, otherwise valid local data.
+      if (
+        envelope &&
+        envelope.version === undefined &&
+        this.validate(envelope)
+      ) {
+        await this.write(envelope);
+        return envelope;
+      }
       if (envelope.version !== 1 || !this.validate(envelope.data))
         throw Error();
       return envelope.data;
@@ -65,6 +74,12 @@ export class AtomicStore<T> {
 }
 export class SecretVault {
   private values: Record<string, string> = {};
+  private mutations: Promise<void> = Promise.resolve();
+  private mutate(action: () => Promise<void>) {
+    const task = this.mutations.then(action);
+    this.mutations = task.catch(() => {});
+    return task;
+  }
   constructor(
     private store: AtomicStore<Record<string, string>>,
     private protector: Protector,
@@ -82,11 +97,14 @@ export class SecretVault {
   async set(id: string, value: string) {
     await this.ready();
     const encrypted = await this.protector.encrypt(value);
-    const next = { ...this.values, [id]: encrypted.toString("base64") };
-    await this.store.write(next);
-    this.values = next;
+    await this.mutate(async () => {
+      const next = { ...this.values, [id]: encrypted.toString("base64") };
+      await this.store.write(next);
+      this.values = next;
+    });
   }
   async get(id: string): Promise<string | undefined> {
+    await this.mutations;
     if (!this.values[id]) return undefined;
     await this.ready();
     try {
@@ -101,14 +119,18 @@ export class SecretVault {
     }
   }
   async delete(id: string) {
-    const next = { ...this.values };
-    delete next[id];
-    await this.store.write(next);
-    this.values = next;
+    await this.mutate(async () => {
+      const next = { ...this.values };
+      delete next[id];
+      await this.store.write(next);
+      this.values = next;
+    });
   }
   async clear() {
-    await this.store.write({});
-    this.values = {};
+    await this.mutate(async () => {
+      await this.store.write({});
+      this.values = {};
+    });
   }
   has(id: string) {
     return !!this.values[id];

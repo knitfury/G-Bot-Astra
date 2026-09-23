@@ -140,7 +140,28 @@ export function GBotChat() {
               <br />A little more room in your day.
             </p>
             <div className="prompt-cards">
-              {prompts.map((p) => (
+              {(data?.runtime
+                ? prompts.map((p, i) =>
+                    i === 0
+                      ? {
+                          ...p,
+                          description:
+                            "Find a customer request, check stock, and prepare a reply.",
+                          prompt:
+                            "Help me find a customer email, check product availability, and prepare a response. Ask me which customer to look for.",
+                        }
+                      : i === 1
+                        ? {
+                            ...p,
+                            description:
+                              "Gather customer context and prepare a support ticket.",
+                            prompt:
+                              "Help me summarize a customer issue and prepare a support ticket. Ask me which customer and issue.",
+                          }
+                        : p,
+                  )
+                : prompts
+              ).map((p) => (
                 <button
                   className="prompt-card"
                   key={p.title}

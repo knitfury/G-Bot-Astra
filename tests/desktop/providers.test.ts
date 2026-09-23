@@ -125,3 +125,113 @@ test("malformed responses and cancellation fail clearly", async () => {
     /stopped/,
   );
 });
+test("Anthropic streams text and JSON tool fragments", async () => {
+  const events = [
+    {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "text_delta", text: "Hello" },
+    },
+    {
+      type: "content_block_start",
+      index: 1,
+      content_block: { type: "tool_use", id: "a1", name: "lookup", input: {} },
+    },
+    {
+      type: "content_block_delta",
+      index: 1,
+      delta: { type: "input_json_delta", partial_json: '{"id":1}' },
+    },
+    { type: "message_stop" },
+  ];
+  const deltas: string[] = [];
+  const result = await new HTTPInference(
+    async () =>
+      new Response(
+        events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  ).generate(
+    { ...input, type: "Anthropic-compatible" },
+    [{ role: "user", text: "hello" }],
+    [],
+    new AbortController().signal,
+    (t) => deltas.push(t),
+  );
+  assert.equal(deltas.join(""), "Hello");
+  assert.deepEqual(result.calls[0].arguments, { id: 1 });
+});
+test("Gemini streaming preserves function thought signatures and excludes private thoughts", async () => {
+  let body = "";
+  const events = [
+    {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { text: "private", thought: true },
+              { text: "Hello" },
+              {
+                functionCall: { name: "lookup", args: { id: 1 } },
+                thoughtSignature: "opaque",
+              },
+            ],
+          },
+          finishReason: "STOP",
+        },
+      ],
+    },
+  ];
+  const adapter = new HTTPInference(async (_u, init) => {
+    body = String(init?.body);
+    return new Response(
+      events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  const result = await run(adapter, { ...input, type: "Gemini-compatible" });
+  assert.equal(result.text, "Hello");
+  assert.equal(result.calls[0].thoughtSignature, "opaque");
+  await adapter.generate(
+    { ...input, type: "Gemini-compatible" },
+    [{ role: "assistant", text: "", calls: result.calls }],
+    [],
+    new AbortController().signal,
+    () => {},
+  );
+  assert.match(body, /thoughtSignature/);
+});
+test("truncated streams and provider timeouts are recoverable domain errors", async () => {
+  await assert.rejects(
+    () =>
+      run(
+        new HTTPInference(
+          async () =>
+            new Response(
+              'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+              { headers: { "content-type": "text/event-stream" } },
+            ),
+        ),
+      ),
+    /before completion/,
+  );
+  const adapter = new HTTPInference(
+    async (_u, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(init.signal?.reason),
+        );
+      }),
+    10,
+  );
+  // Keep the event loop alive while AbortSignal's unref'ed timer expires.
+  const keep = setTimeout(() => {}, 1000);
+  try {
+    await assert.rejects(
+      () => run(adapter),
+      (e) => e instanceof Error && "code" in e && e.code === "TIMEOUT",
+    );
+  } finally {
+    clearTimeout(keep);
+  }
+});

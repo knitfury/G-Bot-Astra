@@ -27,21 +27,153 @@ export function localDatabase(): Database {
   return db;
 }
 export function databaseShape(value: unknown): value is Database {
-  if (!value || typeof value !== "object") return false;
-  const d = value as Database;
+  const obj = (v: unknown): v is Record<string, unknown> =>
+    !!v && typeof v === "object" && !Array.isArray(v);
+  const strings = (v: unknown, keys: string[]) =>
+    obj(v) && keys.every((k) => typeof v[k] === "string");
+  const array = (v: unknown, check: (item: unknown) => boolean): boolean =>
+    Array.isArray(v) && v.every(check);
+  const tool = (v: unknown) =>
+    strings(v, ["id", "connectionId", "name", "label", "description"]) &&
+    obj(v) &&
+    typeof v.enabled === "boolean" &&
+    typeof v.requiresApproval === "boolean" &&
+    ["read", "write", "destructive"].includes(String(v.risk));
+  const message = (v: unknown) =>
+    strings(v, ["id", "role", "content", "createdAt", "model", "status"]) &&
+    obj(v) &&
+    array(v.attachments, (a) =>
+      strings(a, ["id", "kind", "name", "mime", "status"]),
+    ) &&
+    array(v.tools, (t) =>
+      strings(t, [
+        "id",
+        "connectionId",
+        "toolId",
+        "label",
+        "input",
+        "status",
+        "output",
+        "startedAt",
+      ]),
+    );
+  if (!obj(value)) return false;
+  const d = value;
   return (
     d.schema === 1 &&
-    !!d.entitlement &&
-    ["free", "starter", "business"].includes(d.entitlement.plan) &&
-    Array.isArray(d.providers) &&
-    Array.isArray(d.connections) &&
-    Array.isArray(d.conversations) &&
-    d.conversations.every(
-      (c) => typeof c.id === "string" && Array.isArray(c.messages),
+    Number.isInteger(d.revision) &&
+    (d.user === null ||
+      strings(d.user, [
+        "id",
+        "name",
+        "email",
+        "avatar",
+        "status",
+        "createdAt",
+      ])) &&
+    obj(d.entitlement) &&
+    ["free", "starter", "business"].includes(String(d.entitlement.plan)) &&
+    typeof d.entitlement.maxActiveConnections === "number" &&
+    obj(d.entitlement.flags) &&
+    array(
+      d.providers,
+      (p) =>
+        strings(p, [
+          "id",
+          "name",
+          "type",
+          "baseUrl",
+          "model",
+          "headers",
+          "method",
+          "auth",
+          "body",
+          "inputPath",
+          "responsePath",
+          "status",
+          "maskedCredential",
+          "createdAt",
+          "updatedAt",
+          "lastTest",
+        ]) &&
+        obj(p) &&
+        typeof p.tools === "boolean" &&
+        array(
+          p.models,
+          (m) =>
+            strings(m, ["id", "providerId", "identifier", "name"]) &&
+            obj(m) &&
+            Array.isArray(m.capabilities) &&
+            typeof m.enabled === "boolean",
+        ),
     ) &&
-    Array.isArray(d.approvals) &&
-    Array.isArray(d.activity) &&
-    !!d.preferences
+    array(
+      d.connections,
+      (c) =>
+        strings(c, [
+          "id",
+          "name",
+          "category",
+          "icon",
+          "url",
+          "auth",
+          "status",
+          "lastConnected",
+          "error",
+          "permissionSummary",
+          "maskedCredential",
+        ]) &&
+        obj(c) &&
+        Number.isInteger(c.slot) &&
+        Number(c.slot) >= 0 &&
+        Number(c.slot) < 8 &&
+        typeof c.enabled === "boolean" &&
+        array(c.tools, tool),
+    ) &&
+    array(
+      d.conversations,
+      (c) =>
+        strings(c, ["id", "title", "createdAt", "updatedAt", "model"]) &&
+        obj(c) &&
+        array(c.messages, message),
+    ) &&
+    array(
+      d.approvals,
+      (a) =>
+        strings(a, [
+          "id",
+          "conversationId",
+          "messageId",
+          "connectionId",
+          "toolId",
+          "action",
+          "consequence",
+          "status",
+          "createdAt",
+        ]) &&
+        obj(a) &&
+        strings(a.inputs, ["recipient", "subject", "body"]),
+    ) &&
+    array(d.activity, (a) =>
+      strings(a, [
+        "id",
+        "timestamp",
+        "actor",
+        "conversationId",
+        "connectionId",
+        "tool",
+        "action",
+        "outcome",
+        "detail",
+      ]),
+    ) &&
+    Array.isArray(d.records) &&
+    obj(d.preferences) &&
+    ["startup", "notifications", "activityVisible"].every(
+      (k) => typeof (d.preferences as Record<string, unknown>)[k] === "boolean",
+    ) &&
+    obj(d.diagnostics) &&
+    typeof d.updateStatus === "string"
   );
 }
 export class Runtime {
@@ -256,7 +388,13 @@ export class Runtime {
           )
             for (const suffix of ["manual", "oauth-tokens", "oauth-client"])
               await vault.delete(`${cid}:${suffix}`);
-          const headers = parseHeaders(input.headers ?? "{}");
+          const existing = await vault.get(`${cid}:manual`);
+          const headers = {
+            ...(existing
+              ? (JSON.parse(existing) as Record<string, string>)
+              : {}),
+            ...parseHeaders(input.headers ?? "{}"),
+          };
           if (input.auth === "Token") {
             if (!input.token && !vault.has(`${cid}:manual`))
               throw new DomainError("MCP_AUTH", "Enter a token or API key.");

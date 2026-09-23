@@ -18,6 +18,7 @@ export interface MCPRuntime {
   disconnect(id: string): Promise<void>;
 }
 export class RemoteMCP implements MCPRuntime {
+  private health = new Map<string, NodeJS.Timeout>();
   private clients = new Map<string, Client>();
   private oauth = new Map<string, DesktopOAuth>();
   constructor(
@@ -41,32 +42,36 @@ export class RemoteMCP implements MCPRuntime {
           )
         : undefined;
     if (provider) this.oauth.set(c.id, provider);
-    const transport = new StreamableHTTPClientTransport(endpoint, {
-      authProvider: provider,
-      requestInit: { headers, redirect: "error" },
-      fetch: async (input, init) => {
-        const u = new URL(String(input));
-        if (
-          u.protocol !== "https:" &&
-          !(
-            u.protocol === "http:" &&
-            ["127.0.0.1", "localhost", "[::1]"].includes(u.hostname)
-          )
-        )
-          throw new DomainError(
-            "MCP_PROTOCOL",
-            "MCP authorization requires HTTPS.",
+    const makeTransport = () =>
+      new StreamableHTTPClientTransport(endpoint, {
+        authProvider: provider,
+        requestInit: { headers, redirect: "error" },
+        fetch: async (input, init) => {
+          const u = new URL(
+            input instanceof Request ? input.url : String(input),
           );
-        return fetch(input, {
-          ...init,
-          redirect: "error",
-          signal: AbortSignal.any([
-            ...(init?.signal ? [init.signal] : []),
-            AbortSignal.timeout(30_000),
-          ]),
-        });
-      },
-    });
+          if (
+            u.protocol !== "https:" &&
+            !(
+              u.protocol === "http:" &&
+              ["127.0.0.1", "localhost", "[::1]"].includes(u.hostname)
+            )
+          )
+            throw new DomainError(
+              "MCP_PROTOCOL",
+              "MCP authorization requires HTTPS.",
+            );
+          return fetch(input, {
+            ...init,
+            redirect: "error",
+            signal: AbortSignal.any([
+              ...(init?.signal ? [init.signal] : []),
+              AbortSignal.timeout(30_000),
+            ]),
+          });
+        },
+      });
+    let transport = makeTransport();
     let client = new Client(
       { name: "G-Bot", version: "0.2.0" },
       { capabilities: {} },
@@ -79,6 +84,8 @@ export class RemoteMCP implements MCPRuntime {
         this.event(c.id, "Waiting for browser authorization");
         const code = await provider.code();
         await transport.finishAuth(code);
+        await transport.close();
+        transport = makeTransport();
         client = new Client(
           { name: "G-Bot", version: "0.2.0" },
           { capabilities: {} },
@@ -92,6 +99,11 @@ export class RemoteMCP implements MCPRuntime {
         const result = await client.listTools(cursor ? { cursor } : undefined);
         for (const t of result.tools) {
           const schema = t.inputSchema as Record<string, unknown>;
+          if (JSON.stringify(schema).length > 50000)
+            throw new DomainError(
+              "MCP_PROTOCOL",
+              "Tool schema exceeds the supported size limit.",
+            );
           const schemaHash = createHash("sha256")
             .update(
               JSON.stringify({
@@ -135,6 +147,23 @@ export class RemoteMCP implements MCPRuntime {
           );
       } while (cursor);
       this.clients.set(c.id, client);
+      if (provider) provider.interactive = false;
+      let checking = false;
+      const timer = setInterval(() => {
+        if (checking) return;
+        checking = true;
+        void client
+          .ping({ timeout: 10_000 })
+          .then(
+            () => this.event(c.id, "Connection healthy"),
+            () => this.event(c.id, "Connection degraded"),
+          )
+          .finally(() => {
+            checking = false;
+          });
+      }, 60_000);
+      timer.unref();
+      this.health.set(c.id, timer);
       return discovered;
     } catch (e) {
       await client.close().catch(() => {});
@@ -200,6 +229,8 @@ export class RemoteMCP implements MCPRuntime {
     }
   }
   async disconnect(id: string) {
+    clearInterval(this.health.get(id));
+    this.health.delete(id);
     this.oauth.get(id)?.close();
     this.oauth.delete(id);
     const client = this.clients.get(id);

@@ -16,6 +16,7 @@ export function validState(expected: string, received: string | null): boolean {
   );
 }
 export class DesktopOAuth implements OAuthClientProvider {
+  interactive = true;
   readonly redirectUrl = "http://127.0.0.1:43827/oauth/callback";
   readonly clientMetadata = {
     client_name: "G-Bot",
@@ -67,6 +68,13 @@ export class DesktopOAuth implements OAuthClientProvider {
     return this.verifier;
   }
   async redirectToAuthorization(url: URL) {
+    if (!this.interactive) {
+      this.event("Authorization expired");
+      throw new DomainError(
+        "MCP_EXPIRED",
+        "Authorization expired. Reconnect this server to sign in again.",
+      );
+    }
     const target = externalURL(url.href);
     if (url.searchParams.get("state") !== this.nonce)
       throw new DomainError("MCP_AUTH", "OAuth state mismatch.");

@@ -227,3 +227,66 @@ test("duplicate tool calls stop safely and plan downgrade retains configurations
   await f.s.entitlements.change("starter");
   assert.equal(f.runtime.db.entitlement.maxActiveConnections, 5);
 });
+test("invalid arguments and hallucinated tools never reach MCP", async () => {
+  const f = await setup();
+  f.inference.generate = async (_p, _turns, tools) => ({
+    text: "",
+    calls: [{ id: "bad", name: tools[0].name, arguments: { query: 123 } }],
+  });
+  await f.s.execution.run(f.cid, "Invalid", f.model, []);
+  assert.equal(f.readCalls(), 0);
+  assert.match(
+    f.runtime.db.conversations[0].messages.at(-1)!.content,
+    /schema/,
+  );
+  f.inference.generate = async () => ({
+    text: "",
+    calls: [{ id: "missing", name: "hallucinated", arguments: {} }],
+  });
+  await f.s.execution.run(f.cid, "Missing", f.model, []);
+  assert.equal(f.readCalls(), 0);
+  assert.match(
+    f.runtime.db.conversations[0].messages.at(-1)!.content,
+    /unavailable/,
+  );
+});
+test("distinct tool calls stop at the bounded loop limit", async () => {
+  const f = await setup();
+  let i = 0;
+  f.inference.generate = async (_p, _turns, tools) => ({
+    text: "",
+    calls: [
+      { id: String(++i), name: tools[0].name, arguments: { query: String(i) } },
+    ],
+  });
+  await f.s.execution.run(f.cid, "Loop", f.model, []);
+  assert.equal(f.readCalls(), 12);
+  assert.match(
+    f.runtime.db.conversations[0].messages.at(-1)!.content,
+    /12-step/,
+  );
+});
+test("restart cancels pending approvals and marks started writes uncertain", async () => {
+  const f = await setup({ write: true });
+  await f.s.execution.run(f.cid, "Send", f.model, []);
+  f.runtime.db.approvals[0].executionState = "started";
+  await f.runtime.save();
+  const restarted = new Runtime(f.store, f.vault, f.inference, f.mcp, {
+    check: async () => {},
+    download: async () => {},
+  });
+  await restarted.init();
+  assert.equal(restarted.db.approvals[0].status, "cancelled");
+  assert.equal(restarted.db.approvals[0].executionState, "uncertain");
+  await assert.rejects(
+    () =>
+      restarted.services.approvals.resolve(restarted.db.approvals[0].id, true),
+    /resolved/,
+  );
+  assert.equal(f.writeCalls(), 0);
+});
+test("malformed nested persisted state is rejected before runtime hydration", () => {
+  const db = localDatabase();
+  (db as unknown as { connections: unknown[] }).connections = [{ id: "bad" }];
+  assert.equal(databaseShape(db), false);
+});

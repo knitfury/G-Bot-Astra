@@ -150,7 +150,7 @@ export function WorkspaceLayout() {
         </div>
       </div>
       <motion.div
-        layout
+        layout="position"
         className="workspace-columns"
         transition={{ type: "spring", stiffness: 320, damping: 35 }}
       >
@@ -160,7 +160,7 @@ export function WorkspaceLayout() {
             <ResizeHandle side="left" />
           </>
         )}
-        <motion.div layout className="chat-container">
+        <motion.div layout="position" className="chat-container">
           <GBotChat />
         </motion.div>
         {right.enabled && !narrow && (

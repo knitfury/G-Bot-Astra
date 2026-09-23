@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -100,6 +100,9 @@ export function ProviderForm({
                 : defaults.baseUrl,
         },
   });
+  useEffect(() => {
+    if (desktop && !provider) setValue("model", "");
+  }, [desktop, provider, setValue]);
   const type = watch("type");
   async function test(v: ProviderInput) {
     const models = await action.mutateAsync(() => services.providers.test(v));
@@ -160,7 +163,12 @@ export function ProviderForm({
         </label>
         <label className="field">
           Default model identifier
-          <input {...register("model")} placeholder="demo-model" />
+          <input
+            {...register("model")}
+            placeholder={
+              desktop ? "Your provider’s model identifier" : "demo-model"
+            }
+          />
           {errors.model && (
             <span className="field-error">{errors.model.message}</span>
           )}
@@ -186,7 +194,7 @@ export function ProviderForm({
           type="password"
           autoComplete="off"
           {...register("key")}
-          placeholder="demo-key-1234"
+          placeholder={desktop ? "Enter credential" : "demo-key-1234"}
         />
         <span className="field-help">
           {desktop
@@ -332,8 +340,9 @@ export function ProviderManager({ embedded = false }: { embedded?: boolean }) {
         <>
           <h2>Bring your preferred AI.</h2>
           <p>
-            G-Bot works with your provider. Connect a demo key now, or explore
-            the workspace first.
+            {data.runtime
+              ? "Connect your provider to start using real AI, or explore the workspace first."
+              : "G-Bot works with your provider. Connect a demo key now, or explore the workspace first."}
           </p>
         </>
       )}
@@ -462,7 +471,11 @@ export function ProviderManager({ embedded = false }: { embedded?: boolean }) {
         open={!!remove}
         onOpenChange={() => setRemove(undefined)}
         title="Remove this provider?"
-        description="Its saved configuration and demo credential indicator will be removed."
+        description={
+          data.runtime
+            ? "Its configuration and protected credential will be removed."
+            : "Its saved configuration and demo credential indicator will be removed."
+        }
       >
         <div className="form-actions">
           <Button onClick={() => setRemove(undefined)}>Keep provider</Button>

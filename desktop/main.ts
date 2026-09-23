@@ -19,11 +19,13 @@ import { HTTPInference } from "./adapters/providers";
 import { RemoteMCP } from "./adapters/mcp";
 import { externalURL } from "./runtime/security";
 import { validateOperation, trustedSender } from "./runtime/ipc";
+import { Diagnostics } from "./runtime/diagnostics";
 import { DomainError, safeError } from "./runtime/errors";
 let window: BrowserWindow | undefined;
 let runtime: Runtime;
 let origin = "";
 let shuttingDown = false;
+let diagnostics: Diagnostics;
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on("second-instance", () => {
   window?.show();
@@ -50,6 +52,7 @@ async function boot() {
     throw Error("Server address unavailable");
   origin = `http://127.0.0.1:${address.port}`;
   const directory = join(app.getPath("userData"), "real-v1");
+  diagnostics = new Diagnostics(directory);
   const vault = new SecretVault(
     new AtomicStore(directory, "credentials.json", () => ({}), stringMap),
     {
@@ -66,13 +69,22 @@ async function boot() {
     vault,
     (url) => shell.openExternal(externalURL(url)),
     (id, event) => {
-      runtime.event(id, event, "completed");
+      if (event !== "Connection healthy" && event !== "Connection degraded")
+        runtime.event(id, event, "completed");
       const c = runtime.db.connections.find((c) => c.id === id);
+      if (c && event === "Waiting for browser authorization")
+        c.status = "authenticating";
+      if (c && event === "Connection degraded" && c.status === "connected")
+        c.status = "degraded";
+      if (c && event === "Connection healthy" && c.status === "degraded")
+        c.status = "connected";
       if (c && event === "Authorization expired") {
         c.status = "authorization expired";
         c.enabled = false;
       }
-      void runtime.save().catch(() => {});
+      void runtime
+        .save()
+        .catch(() => diagnostics.record("storage_failure", "PERSISTENCE"));
     },
   );
   const update = async (action: "check" | "download") => {
@@ -111,10 +123,18 @@ async function boot() {
   ] as const)
     autoUpdater.on(event, () => {
       runtime.db.updateStatus = state;
+      runtime.event(
+        "",
+        `Update ${state}`,
+        state === "failed" ? "failed" : "completed",
+      );
+      void diagnostics.record("update_state", "UPDATE");
       if (state === "failed" && runtime.db.runtime)
         runtime.db.runtime.updateError =
           "Update failed. Check the release feed, signing configuration and network.";
-      void runtime.save().catch(() => {});
+      void runtime
+        .save()
+        .catch(() => diagnostics.record("storage_failure", "PERSISTENCE"));
     });
   const createWindow = async () => {
     window = new BrowserWindow({
@@ -244,6 +264,7 @@ async function boot() {
         return { ok: true, value };
       } catch (error) {
         const safe = safeError(error);
+        void diagnostics.record("ipc_failure", safe.code);
         return { ok: false, error: { code: safe.code, message: safe.message } };
       }
     },
@@ -263,7 +284,17 @@ async function boot() {
             label: "New conversation",
             accelerator: "CmdOrCtrl+N",
             click: () => {
-              void window?.loadURL(origin + "/workspace");
+              void (async () => {
+                if (preferences) {
+                  const next = JSON.parse(preferences);
+                  next.state.conversationId = "";
+                  preferences = JSON.stringify(next);
+                  await prefs.write(preferences);
+                }
+                await window?.loadURL(origin + "/workspace");
+              })().catch(() =>
+                diagnostics.record("storage_failure", "PERSISTENCE"),
+              );
             },
           },
           { role: "quit" },
@@ -311,6 +342,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 void boot().catch(() => {
+  void diagnostics?.record("startup_failure", "PERSISTENCE");
   dialog.showErrorBox(
     "G-Bot could not start",
     "Check local storage access and reinstall the application if needed. No credentials were exposed.",
