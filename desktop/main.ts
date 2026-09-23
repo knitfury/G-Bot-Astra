@@ -35,6 +35,7 @@ async function boot() {
   await app.whenReady();
   const root = app.getAppPath();
   process.env.GBOT_DESKTOP_SERVER = "1";
+  process.env.NEXT_TELEMETRY_DISABLED = "1";
   const serverApp = next({ dev: false, dir: root, hostname: "127.0.0.1" });
   await serverApp.prepare();
   const handler = serverApp.getRequestHandler();

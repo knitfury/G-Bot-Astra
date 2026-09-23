@@ -33,3 +33,10 @@ The application uses the following packages. Their license texts are included in
 | zustand | 5.0.15 | MIT |
 
 The locally owned Button and Dialog components follow the shadcn/ui composition pattern using Radix primitives. Phosphor Icons supply product icons. Chromium is an optional testing-only dependency with separate upstream notices.
+
+- electron 44.4.4: MIT; retain upstream license notices in distributions.
+- @modelcontextprotocol/sdk 1.30.0: MIT; retain upstream license notices in distributions.
+- electron-builder 26.15.3: MIT; retain upstream license notices in distributions.
+- electron-updater 6.8.9: MIT; retain upstream license notices in distributions.
+- esbuild 0.28.2: MIT; retain upstream license notices in distributions.
+- ajv 8.20.0: MIT; retain upstream license notices in distributions.
