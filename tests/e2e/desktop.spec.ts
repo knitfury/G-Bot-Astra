@@ -205,6 +205,16 @@ test("desktop contracts: configure, discover, autonomous reads, approvals, recov
             () => document.documentElement.scrollWidth <= innerWidth,
           ),
         ).toBeTruthy();
+        if (route === "/workspace") {
+          await expect
+            .poll(() =>
+              page.locator(".chat-container").evaluate((el) => {
+                const b = el.getBoundingClientRect();
+                return b.left >= 0 && b.right <= innerWidth;
+              }),
+            )
+            .toBeTruthy();
+        }
         await page.screenshot({
           path: info.outputPath(
             `${color}-${appearance}-${width}-${route.slice(1)}.png`,

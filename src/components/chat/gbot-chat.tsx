@@ -265,7 +265,7 @@ function MessageView({ message: m, cid }: { message: Message; cid: string }) {
               minute: "2-digit",
             })}
           </span>
-          {m.role === "assistant" && <Badge>Demo</Badge>}
+          {m.role === "assistant" && !data?.runtime && <Badge>Demo</Badge>}
         </div>
         {m.attachments.length > 0 && (
           <div className="attachment-list">

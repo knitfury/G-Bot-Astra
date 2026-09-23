@@ -250,7 +250,7 @@ export function SettingsScreen() {
               <h2>Everyday preferences</h2>
               <Toggle
                 label="Open workspace on startup"
-                description="Saved preference for the future desktop app; browser startup is unchanged."
+                description={data.runtime ? "Saved preference. Automatic login-item launch is not enabled in this build." : "Saved preference for the future desktop app; browser startup is unchanged."}
                 checked={data.preferences.startup}
                 onChange={(v) =>
                   run(() => services.account.preferences({ startup: v }))
@@ -258,7 +258,7 @@ export function SettingsScreen() {
               />
               <Toggle
                 label="Desktop notifications"
-                description="Mock preference. No operating-system notifications are sent in Phase 1."
+                description={data.runtime ? "Saved preference. Operating-system notifications are not enabled in this build." : "Mock preference. No operating-system notifications are sent in Phase 1."}
                 checked={data.preferences.notifications}
                 onChange={(v) =>
                   run(() => services.account.preferences({ notifications: v }))

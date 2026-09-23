@@ -34,6 +34,7 @@ interface Run {
   controller: AbortController;
   busy: boolean;
   model: string;
+  retryContent?: string;
 }
 export class Orchestrator {
   private runs = new Map<string, Run>();
@@ -244,7 +245,7 @@ export class Orchestrator {
       connectionId: c.id,
       toolId: t.id,
       label: t.label,
-      input: JSON.stringify(call.arguments),
+      input: c.name,
       status: "running",
       startedAt: stamp(),
       output: "",
@@ -318,6 +319,7 @@ export class Orchestrator {
         "This request is already running.",
       );
     run.busy = true;
+    let checkpoint = run.message.content;
     run.message.status = "running";
     this.notify();
     try {
@@ -328,6 +330,7 @@ export class Orchestrator {
             "Stopped. External actions already submitted may still complete; inspect Activity.",
           );
         while (run.queue.length) {
+          checkpoint = run.message.content;
           if (!(await this.execute(run, run.queue[0]))) return;
           run.queue.shift();
         }
@@ -344,6 +347,7 @@ export class Orchestrator {
             description: `${x.c.name}: ${x.t.description}`,
             schema: x.t.inputSchema ?? { type: "object" },
           }));
+        checkpoint = run.message.content;
         const result = await this.inference.generate(
           config,
           run.turns,
@@ -369,6 +373,7 @@ export class Orchestrator {
       }
     } catch (e) {
       const error = safeError(e);
+      run.retryContent = checkpoint;
       run.message.status = error.code === "CANCELLED" ? "cancelled" : "failed";
       run.message.content += `\n\n${error.message}`;
     } finally {
@@ -489,6 +494,8 @@ export class Orchestrator {
         "TOOL_FAILED",
         "An external action has an uncertain outcome. Verify it in the business app before requesting another action.",
       );
+    if (run.retryContent !== undefined) run.message.content = run.retryContent;
+    run.retryContent = undefined;
     run.controller = new AbortController();
     await this.advance(run);
   }
