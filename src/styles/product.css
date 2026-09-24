@@ -2379,3 +2379,20 @@
     font-size: 18px;
   }
 }
+/* Business panes and tool administration must shrink independently of content. */
+.business-pane, .pane-content, .tool-permission, .tool-permission .grow, .record-item .grow, .snapshot-item { min-width: 0; }
+.tool-permission h3, .tool-permission code, .tool-permission p, .snapshot-item, .snapshot-detail, .connection-card h3 { overflow-wrap: anywhere; word-break: normal; white-space: normal; }
+.tool-permission .check-row { flex-shrink: 0; }
+.tool-permission .row { flex-wrap: wrap; }
+.snapshot-header { padding: 18px 16px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.snapshot-list { display: grid; padding: 8px; gap: 6px; }
+.snapshot-item { padding: 13px; text-align: left; border: 1px solid transparent; border-radius: 10px; color: var(--text); background: transparent; }
+.snapshot-item:hover, .snapshot-item[aria-pressed="true"] { border-color: var(--line); background: var(--accent-soft); }
+.snapshot-item strong { display: block; font-size: 13px; }
+.snapshot-item p { margin: 5px 0; font-size: 12px; color: var(--muted); }
+.snapshot-detail { margin: 8px 14px 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.snapshot-detail dl { display: grid; gap: 6px; font-size: 12px; }
+.snapshot-detail dd { margin: 0 0 8px; font-weight: 600; }
+.snapshot-detail .record-body { white-space: pre-wrap; }
+.snapshot-state { padding: 20px 16px; display: grid; gap: 16px; }
+.permission-bulk { padding-block: 12px; border-bottom: 1px solid var(--line); }

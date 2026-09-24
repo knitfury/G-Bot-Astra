@@ -1,0 +1,61 @@
+name: Manually prepare signed release candidate
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Reviewed stable version (for example 1.0.0)
+        required: true
+permissions:
+  contents: read
+jobs:
+  candidate:
+    if: github.ref == 'refs/heads/main'
+    environment: release-signing
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:desktop
+      - run: npm run test:production
+      - run: npm run security:scan
+      - run: npm audit --audit-level=high
+      - name: Require approved version and signing material
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          node -e "const p=require('./package.json');if(p.version!==process.env.REQUESTED_VERSION||!/^\d+\.\d+\.\d+$/.test(p.version))process.exit(1);if(!process.env.CSC_LINK||!process.env.CSC_KEY_PASSWORD)throw Error('BLOCKED: signing credentials required');"
+      - run: npm run desktop:dist -- --publish never
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: true
+      - run: node scripts/release-checksums.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-candidate-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*yml
+            release/*.blockmap
+            release/SHA256SUMS.txt
+# This workflow has no publish/release action and no write permission.
+# Configure release-signing with required human reviewers before any use.
+# Public hosting remains a separate manual approval after fresh install/update acceptance.

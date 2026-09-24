@@ -301,12 +301,16 @@ export const mockServices: Services = {
       get().connections = get().connections.filter((c) => c.id !== id);
       persist();
     },
+    async snapshot(id) {
+      const c=findConnection(id); return {connectionId:id,kind:null,state:"unknown",items:[],refreshedAt:null,message:c.name,sourceTools:[]};
+    },
     async records(category) {
       await delay(250);
       return get().records.filter((r) => r.category === category);
     },
   },
   tools: {
+    async selectAll(cid,enabled) { findConnection(cid).tools.forEach(t=>{t.enabled=enabled;});persist(); },
     async toggle(cid, tid, enabled) {
       await delay();
       const tool = findConnection(cid).tools.find((t) => t.id === tid);

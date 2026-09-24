@@ -13,6 +13,13 @@ import { join } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import next from "next";
 import { autoUpdater } from "electron-updater";
+import {verifyUpdate,verifyInstaller,type UpdateManifest} from "./runtime/update-integrity";
+import {SafeTelemetry} from "./runtime/telemetry";
+import {CatalogClient} from "./runtime/catalog";
+import {nativeData,applyRetention} from "./runtime/native-data";
+import { ProductionIdentity } from "./runtime/identity";
+import { EncryptedStore } from "./runtime/encrypted";
+import { entitlementFor } from "../src/lib/entitlements";
 import { Runtime, localDatabase, databaseShape } from "./runtime/service";
 import { AtomicStore, SecretVault, stringMap } from "./runtime/storage";
 import { HTTPInference } from "./adapters/providers";
@@ -53,7 +60,7 @@ async function boot() {
     throw Error("Server address unavailable");
   origin = `http://127.0.0.1:${address.port}`;
   const directory = join(app.getPath("userData"), "real-v1");
-  diagnostics = new Diagnostics(directory);
+  diagnostics = new Diagnostics(directory,new SafeTelemetry(process.env.GBOT_SENTRY_DSN,()=>runtime?.db.preferences.diagnosticsConsent===true));
   const vault = new SecretVault(
     new AtomicStore(directory, "credentials.json", () => ({}), stringMap),
     {
@@ -88,30 +95,61 @@ async function boot() {
         .catch(() => diagnostics.record("storage_failure", "PERSISTENCE"));
     },
   );
+  let verifiedManifest:UpdateManifest|undefined;
   const update = async (action: "check" | "download") => {
     if (!app.isPackaged)
       throw new DomainError(
         "CAPABILITY",
         "Updates require a signed packaged release and configured publishing feed.",
       );
-    if (action === "check") await autoUpdater.checkForUpdates();
-    else await autoUpdater.downloadUpdate();
+    if(action==="check"){
+      const manifestUrl=process.env.GBOT_RELEASE_MANIFEST_URL,keys=JSON.parse(process.env.GBOT_UPDATE_PUBLIC_KEYS??"{}");
+      if(!manifestUrl||!Object.keys(keys).length)throw new DomainError("CAPABILITY","No verified release channel is configured yet.");
+      const response=await fetch(externalURL(manifestUrl),{redirect:"error",signal:AbortSignal.timeout(15000)});if(!response.ok)throw new DomainError("NETWORK","Release information is unavailable. Try again later.");
+      const raw=await response.text();if(raw.length>16000)throw Error("Invalid release manifest");
+      verifiedManifest=verifyUpdate(JSON.parse(raw),keys,app.getVersion(),process.platform,process.arch);
+      const result=await autoUpdater.checkForUpdates();if(result?.updateInfo.version!==verifiedManifest.version){verifiedManifest=undefined;throw new DomainError("CAPABILITY","Release feed does not match its signed manifest.");}
+    }else{
+      if(!verifiedManifest)throw new DomainError("CAPABILITY","Check for a verified update first.");
+      const files=await autoUpdater.downloadUpdate();for(const file of files)await verifyInstaller(file,verifiedManifest);
+      runtime.db.updateStatus="restart required";await runtime.save();
+    }
   };
+  await vault.init();
+  const identity = new ProductionIdentity(vault, {
+    supabaseUrl:process.env.NEXT_PUBLIC_SUPABASE_URL??"",anonKey:process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY??"",
+    controlOrigin:process.env.GBOT_CONTROL_PLANE_URL??"https://account.vidinex.ee",
+    environment:process.env.NEXT_PUBLIC_GBOT_ENVIRONMENT==="production"?"production":process.env.NEXT_PUBLIC_GBOT_ENVIRONMENT==="staging"?"staging":"development",
+    publicKeys:JSON.parse(process.env.GBOT_LICENSE_PUBLIC_KEYS??"{}"),version:"1.0.0",platform:process.platform==="darwin"?"darwin":"win32",
+  },url=>shell.openExternal(externalURL(url)),async(license,user)=>{
+    if(user)runtime.db.user=user;
+    if(license){runtime.db.entitlement=entitlementFor(license.plan);runtime.db.entitlement.renewalAt=new Date(license.expiresAt).toISOString();}
+    else runtime.db.entitlement.status="expired";
+    await runtime.save();
+  });
+  const catalog=new CatalogClient(vault,process.env.GBOT_CONTROL_PLANE_URL??"https://account.vidinex.ee",JSON.parse(process.env.GBOT_CATALOG_PUBLIC_KEYS??"{}"));
+  const inference=new HTTPInference();
+  const guardedMcp={connect:async(...args:Parameters<typeof mcp.connect>)=>{await identity.ensure();return mcp.connect(...args);},disconnect:(id:string)=>mcp.disconnect(id),call:async(...args:Parameters<typeof mcp.call>)=>{await identity.ensure();return mcp.call(...args);}};
   runtime = new Runtime(
-    new AtomicStore(directory, "workspace.json", localDatabase, databaseShape),
+    new EncryptedStore(directory, "workspace.json", localDatabase, databaseShape,vault),
     vault,
-    new HTTPInference(),
-    mcp,
+    {generate:async(...args:Parameters<typeof inference.generate>)=>{await identity.ensure();return inference.generate(...args);}},
+    guardedMcp,
     { check: () => update("check"), download: () => update("download") },
+    identity,
   );
   await runtime.init();
-  const prefs = new AtomicStore<string | null>(
+  if(runtime.db.preferences.historyRetention)await applyRetention(runtime,runtime.db.preferences.historyRetention);
+  const prefs = new EncryptedStore<string | null>(
     directory,
     "preferences.json",
     () => null,
     (v): v is string | null => v === null || typeof v === "string",
+    vault,
   );
   let preferences = await prefs.read();
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.allowPrerelease = false;
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   for (const [event, state] of [
@@ -119,7 +157,6 @@ async function boot() {
     ["update-available", "available"],
     ["update-not-available", "up to date"],
     ["download-progress", "downloading"],
-    ["update-downloaded", "restart required"],
     ["error", "failed"],
   ] as const)
     autoUpdater.on(event, () => {
@@ -202,6 +239,13 @@ async function boot() {
         let value: unknown;
         if (request.operation === "snapshot")
           value = await runtime.services.snapshot();
+        else if (request.operation === "desktop.catalog") value=await catalog.get();
+        else if (request.operation === "desktop.data") value=await nativeData(runtime,directory,a[0] as string,a[1] as string);
+        else if (request.operation === "desktop.retention") value=await applyRetention(runtime,a[0] as 0|30|90|180);
+        else if (request.operation === "desktop.signIn") value=await identity.browser(a[0] as "google"|"azure");
+        else if (request.operation === "desktop.verifyMfa") value=await identity.mfa(a[0] as string);
+        else if (request.operation === "desktop.refreshLicense") value=await identity.ensure(true);
+        else if (request.operation === "desktop.openAccount") value=await shell.openExternal(externalURL((process.env.GBOT_CONTROL_PLANE_URL??"https://account.vidinex.ee")+"/portal"));
         else if (request.operation === "desktop.readPreferences")
           value = preferences;
         else if (request.operation === "desktop.savePreferences") {
@@ -212,6 +256,13 @@ async function boot() {
           }
           preferences = a[0] as string | null;
           await prefs.write(preferences);
+        } else if (request.operation === "desktop.openDemo") {
+          const demo = new BrowserWindow({width:1440,height:1000,minWidth:390,minHeight:600,title:"G-Bot · Demo Mode",webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,partition:"persist:gbot-demo"}});
+          demo.webContents.setWindowOpenHandler(()=>({action:"deny"}));
+          demo.webContents.on("will-navigate",(event,url)=>{if(new URL(url).origin!==origin)event.preventDefault();});
+          await demo.loadURL(origin);
+        } else if (request.operation === "desktop.diagnostics") {
+          value=JSON.stringify({format:"g-bot-support",version:app.getVersion(),platform:process.platform,architecture:process.arch,component:"desktop",credentialProtection:"OS secure storage",updateStatus:runtime.db.updateStatus},null,2);
         } else if (request.operation === "desktop.installUpdate") {
           if (runtime.db.updateStatus !== "restart required")
             throw new DomainError(
@@ -225,7 +276,7 @@ async function boot() {
             filters: [
               {
                 name: "Text documents",
-                extensions: ["txt", "md", "csv", "png", "jpg", "jpeg", "webp"],
+                extensions: ["pdf", "docx", "xlsx", "txt", "md", "csv", "png", "jpg", "jpeg", "webp"],
               },
             ],
           });
@@ -235,12 +286,12 @@ async function boot() {
               throw new DomainError("CAPABILITY", "Select at most five files.");
             value = await Promise.all(
               result.filePaths.map(async (path) => {
-                if ((await stat(path)).size > 10 * 1024 * 1024)
+                if ((await stat(path)).size > 50 * 1024 * 1024)
                   throw new DomainError(
                     "CAPABILITY",
-                    "Maximum file size is 10 MB.",
+                    "Maximum file size is 50 MB.",
                   );
-                return runtime.attachments.ingest(
+                return await runtime.attachments.ingestFile(
                   path.split(/[\\/]/).at(-1)!,
                   "text/plain",
                   await readFile(path),
@@ -250,7 +301,7 @@ async function boot() {
           }
         } else if (request.operation === "attachments.process") {
           const f = a[0] as { name: string; type: string; bytes: number[] };
-          value = runtime.attachments.ingest(
+          value = await runtime.attachments.ingestFile(
             f.name,
             f.type,
             Uint8Array.from(f.bytes),

@@ -27,6 +27,15 @@ export type Calls = GroupCalls & {
   "desktop.pickFiles": () => Promise<Attachment[]>;
   "desktop.readPreferences": () => Promise<string | null>;
   "desktop.savePreferences": (value: string | null) => Promise<void>;
+  "desktop.signIn": (provider:"google"|"azure") => Promise<import("../../types/domain").User>;
+  "desktop.verifyMfa": (code:string) => Promise<void>;
+  "desktop.refreshLicense": () => Promise<unknown>;
+  "desktop.openAccount": () => Promise<void>;
+  "desktop.catalog": () => Promise<{catalog:import("../../production/model").Catalog|null;cached:boolean;message:string}>;
+  "desktop.data": (action:"usage"|"clear-cache"|"clear-activity"|"backup"|"restore"|"json"|"markdown",password:string) => Promise<{message?:string;bytes?:number;freeBytes?:number;lowDisk?:boolean;cancelled?:boolean}>;
+  "desktop.retention": (days:0|30|90|180) => Promise<void>;
+  "desktop.openDemo": () => Promise<void>;
+  "desktop.diagnostics": () => Promise<string>;
   "desktop.installUpdate": () => Promise<void>;
 };
 export type Operation = keyof Calls;

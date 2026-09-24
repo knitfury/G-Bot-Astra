@@ -341,7 +341,7 @@ export function ChatComposer({
       {error && <ErrorState message={error} />}
       <p className="composer-caption">
         Your apps provide context. You stay in control.{" "}
-        <span>Simulated responses · check important details.</span>
+        <span>{data?.runtime ? "Check important details before acting." : "Simulated responses · check important details."}</span>
       </p>
       <input
         className="sr-only"

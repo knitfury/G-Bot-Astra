@@ -1,12 +1,15 @@
 "use client";
+import { StorageControls } from "./storage-controls";
 import { useState } from "react";
+import Link from "next/link";
 import type { Database } from "@/types/domain";
 import { useAction } from "@/hooks/use-services";
 import { services } from "@/services";
 import { desktopCall } from "@/services/desktop/client";
 import { Button } from "@/components/ui/button";
+import { AsyncCheckbox } from "@/components/ui/async-checkbox";
 import { Dialog } from "@/components/ui/dialog";
-import { Badge, ErrorState, Notice } from "@/components/common/ui";
+import { Badge, ErrorState, Notice, Logo } from "@/components/common/ui";
 export function DesktopSettings({
   tab,
   data,
@@ -15,79 +18,187 @@ export function DesktopSettings({
   data: Database;
 }) {
   const action = useAction(),
-    [clear, setClear] = useState(false);
+    [confirm, setConfirm] = useState<"history" | "credentials" | null>(null),
+    [report, setReport] = useState("");
   const run = (fn: () => Promise<unknown>) =>
     void action.mutateAsync(fn).catch(() => {});
-  return (
+  const controls = (
     <div className="panel stack">
-      <h2>{tab}</h2>
+      <h2>Local data controls</h2>
+      <div className="settings-row">
+        <div>
+          <h3>Clear conversation history</h3>
+          <p>
+            Remove local conversations, approvals and activity. Keep your
+            connections, credentials and preferences.
+          </p>
+        </div>
+        <Button onClick={() => setConfirm("history")}>Clear history</Button>
+      </div>
+      <div className="settings-row">
+        <div>
+          <h3>Remove all credentials</h3>
+          <p>
+            Disconnect AI providers and apps. Keep saved configuration and
+            history.
+          </p>
+        </div>
+        <Button onClick={() => setConfirm("credentials")}>
+          Remove credentials
+        </Button>
+      </div>
+      <label className="settings-row">
+        <span>
+          <strong>Show activity history</strong>
+          <p>Hide or show Activity without deleting retained records.</p>
+        </span>
+        <AsyncCheckbox
+          role="switch"
+          aria-label="Show activity history"
+          checked={data.preferences.activityVisible}
+          onCheckedChange={(v) =>
+            action.mutateAsync(() =>
+              services.account.preferences({ activityVisible: v }),
+            )
+          }
+        />
+      </label>
+      <div className="settings-row">
+        <div>
+          <h3>Explore Demo Mode</h3>
+          <p>
+            A separate simulated workspace with realistic business snapshots and
+            failure/recovery controls. Resetting its data never changes this
+            workspace.
+          </p>
+        </div>
+        <Button onClick={() => run(() => desktopCall("desktop.openDemo"))}>
+          Open Demo
+        </Button>
+      </div>
+    </div>
+  );
+  return (
+    <div className="stack">
       {tab === "Security & Privacy" ? (
         <>
-          <p>
-            Credentials are encrypted using your operating system’s secure
-            storage. Conversations and workspace preferences are saved in this
-            device’s application data folder.
-          </p>
-          <Notice>
-            Prompts, selected attachments and necessary tool results are sent
-            directly to your selected AI provider. Tool requests go directly to
-            your configured MCP servers. G-Bot does not proxy this business
-            traffic.
-          </Notice>
-          <p>
-            Local conversation files are not a substitute for full-disk
-            encryption. Protect your operating-system account and device
-            backups.
-          </p>
-          <Button onClick={() => setClear(true)}>
-            Remove stored credentials
-          </Button>
-          <Dialog
-            open={clear}
-            onOpenChange={setClear}
-            title="Remove all stored credentials?"
-            description="This disconnects your AI providers and MCP servers. Saved configuration and conversations remain."
-          >
-            <Button
-              variant="destructive"
-              disabled={action.isPending}
-              onClick={() =>
-                run(async () => {
-                  await services.secureStorage.clear();
-                  setClear(false);
-                })
-              }
-            >
-              Remove credentials
-            </Button>
-          </Dialog>
+          <div className="panel stack">
+            <h2>Clear boundaries. Your control.</h2>
+            <p>
+              Provider and app credentials are protected by your operating
+              system. Your business context stays under your control.
+            </p>
+            <Notice>
+              Prompts, selected attachments and necessary tool results go
+              directly to your selected AI provider. App requests go directly to
+              your authorized MCP servers. Account and billing services receive
+              account metadata, not your conversations.
+            </Notice>
+            <p>
+              New tools start disabled. Read tools require your permission;
+              sending, changing or deleting business records requires your
+              approval immediately before execution.
+            </p>
+            <Link className="text-link" href="/connections">
+              Review tool permissions
+            </Link>
+            <Link className="text-link" href="/portal">
+              Account security & MFA
+            </Link>
+          </div>
+          {controls}
         </>
       ) : tab === "Advanced" ? (
         <>
-          <Badge>Local-first runtime</Badge>
-          <p>
-            Provider and MCP requests run in the trusted desktop process. Tool
-            discovery never enables new permissions automatically. Consequential
-            actions require approval.
-          </p>
-          <p>
-            Plan controls currently use development entitlements. They are not a
-            paid licensing or anti-tampering system. Use Account to test Free
-            (1), Starter (5), and Business (8) connection limits.
-          </p>
-          <p>
-            For the isolated deterministic demo, launch with{" "}
-            <code>npm run desktop:demo</code> or use the browser version. No
-            paid keys are needed there.
-          </p>
+          {controls}
+          <StorageControls />
+          <div className="panel stack">
+            <h2>Custom integrations</h2>
+            <p>
+              Connect your own AI endpoint or compatible remote MCP server.
+              Credentials stay protected on this device.
+            </p>
+            <Link className="text-link" href="/providers">
+              Configure a custom provider
+            </Link>
+            <Link className="text-link" href="/connections">
+              Inspect MCP details
+            </Link>
+          </div>
+          <div className="panel stack">
+            <h2>Sanitized diagnostics</h2>
+            <label className="settings-row">
+              <span>
+                <strong>Share optional diagnostics</strong>
+                <p>
+                  Send only sanitized error categories and app/platform
+                  metadata. No business content or credentials.
+                </p>
+              </span>
+              <AsyncCheckbox
+                role="switch"
+                aria-label="Share optional diagnostics"
+                checked={data.preferences.diagnosticsConsent === true}
+                onCheckedChange={(v) =>
+                  action.mutateAsync(() =>
+                    services.account.preferences({ diagnosticsConsent: v }),
+                  )
+                }
+              />
+            </label>
+            <p>
+              Inspect a support report before sharing it. Reports exclude
+              conversations, attachments, app data and credentials.
+            </p>
+            <Button
+              onClick={() =>
+                run(async () => {
+                  setReport(await desktopCall("desktop.diagnostics"));
+                })
+              }
+            >
+              Inspect diagnostics
+            </Button>
+            {report && (
+              <>
+                <pre className="code">{report}</pre>
+                <Button
+                  onClick={() => {
+                    const url = URL.createObjectURL(
+                      new Blob([report], { type: "application/json" }),
+                    );
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "gbot-diagnostics.json";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  Export diagnostics
+                </Button>
+              </>
+            )}
+            <a className="text-link" href="mailto:gbot@vidinex.ee">
+              Contact G-Bot Support
+            </a>
+          </div>
         </>
       ) : (
-        <>
-          <Badge>Version {data.runtime?.version}</Badge>
+        <div className="panel stack">
+          <Logo />
+          <h2>G-Bot</h2>
+          <p>
+            Ask once. G-Bot works across your business and gets the task done.
+          </p>
+          <div className="row wrap">
+            <Badge>Version {data.runtime?.version}</Badge>
+            <Badge>Stable channel</Badge>
+          </div>
+          <div className="divider" />
           <h3>Application updates</h3>
           <p role="status">
             {data.updateStatus === "idle"
-              ? "Check for signed releases when running an installed build."
+              ? "You control when updates are downloaded and installed."
               : data.updateStatus}
           </p>
           {data.runtime?.updateError && (
@@ -107,21 +218,65 @@ export function DesktopSettings({
             )}
             {data.updateStatus === "restart required" && (
               <Button
-                variant="default"
                 onClick={() => run(() => desktopCall("desktop.installUpdate"))}
               >
                 Restart and install
               </Button>
             )}
           </div>
-          <p className="tiny">
-            Unsigned development builds cannot update. Release signing, macOS
-            notarization, and a published update feed must be configured by the
-            owner.
+          <div className="divider" />
+          <div className="row wrap">
+            <Link className="text-link" href="/g-bot/support">
+              Help & Support
+            </Link>
+            <Link className="text-link" href="/g-bot/privacy">
+              Privacy
+            </Link>
+            <Link className="text-link" href="/g-bot/terms">
+              Terms
+            </Link>
+            <Link className="text-link" href="/g-bot/notices">
+              Open-source notices
+            </Link>
+          </div>
+          <p className="tiny muted">
+            Vidinex E-Commerce OÜ · Registry code 17603412 · Estonia
           </p>
-        </>
+        </div>
       )}
       {action.error && <ErrorState message={action.error.message} />}
+      <Dialog
+        open={!!confirm}
+        onOpenChange={() => setConfirm(null)}
+        title={
+          confirm === "history"
+            ? "Clear local history?"
+            : "Remove all stored credentials?"
+        }
+        description={
+          confirm === "history"
+            ? "This permanently removes local conversations, approvals and activity. Connections and credentials remain."
+            : "This disconnects providers and apps. Saved configuration and history remain."
+        }
+      >
+        <div className="form-actions">
+          <Button onClick={() => setConfirm(null)}>Cancel</Button>
+          <Button
+            variant="destructive"
+            disabled={action.isPending}
+            onClick={() =>
+              run(async () => {
+                if (confirm === "history")
+                  await services.account.clearHistory();
+                else await services.secureStorage.clear();
+                setConfirm(null);
+              })
+            }
+          >
+            {confirm === "history" ? "Clear history" : "Remove credentials"}
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }

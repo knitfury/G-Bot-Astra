@@ -80,3 +80,9 @@ create function public.prune_metadata() returns void language plpgsql security d
  delete from public.rate_limits where window_start<now()-interval '1 day'; end $$;
 revoke all on all functions in schema public from public,anon,authenticated;
 grant execute on all functions in schema public to service_role;
+-- Atomic catalog publication includes the audit record.
+create function public.publish_catalog(actor_id uuid,document jsonb) returns void language plpgsql security definer set search_path='' as $$ begin
+ insert into public.catalog(id,signed_document) values(true,document) on conflict(id) do update set signed_document=document,updated_at=now();
+ insert into public.audit_events(actor,action,reason) values(actor_id,'catalog_changed','admin_review'); end $$;
+revoke all on function public.publish_catalog(uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.publish_catalog(uuid,jsonb) to service_role;

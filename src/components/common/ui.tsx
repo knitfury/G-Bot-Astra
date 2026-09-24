@@ -29,6 +29,7 @@ export const categoryIcons = {
   Calendar: CalendarBlank,
   Documents: Files,
   Projects: Kanban,
+  Ecommerce: Package, Shipping: Package, Logistics: Package, Custom: Plugs,
 };
 export function AppIcon({
   category,

@@ -28,6 +28,7 @@ export function toolsFor(id: string, category: Category): MCPTool[] {
     Calendar: ["Find meetings", "Create meeting"],
     Documents: ["Search documents", "Create document"],
     Projects: ["Read project tasks", "Create task"],
+    Ecommerce:["Read orders","Update order"],Shipping:["Read shipments","Create shipment"],Logistics:["Read deliveries","Update delivery"],Custom:["Read context","Update record"],
   };
   return labels[category].map((label, i) => ({
     id: `${id}-${i}`,
@@ -55,6 +56,7 @@ export function demoConnections(): MCPConnection[] {
       Calendar: "Team Calendar",
       Documents: "WorkDrive",
       Projects: "Projects",
+      Ecommerce:"Store",Shipping:"Shipments",Logistics:"Deliveries",Custom:"Custom app",
     }[category],
     category,
     icon: category,

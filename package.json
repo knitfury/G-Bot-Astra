@@ -1,6 +1,6 @@
 {
   "name": "g-bot-astra",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
@@ -18,7 +18,10 @@
     "desktop:dist": "npm run desktop:build && electron-builder",
     "test:desktop": "node --import tsx --test tests/desktop/*.test.ts",
     "desktop:demo": "electron . --demo",
-    "test:electron": "node scripts/smoke-electron.mjs"
+    "test:electron": "node scripts/smoke-electron.mjs",
+    "test:production": "node --import tsx --test tests/production/*.test.ts",
+    "lint": "prettier --check \"src/production/**/*.{ts,tsx}\" \"desktop/runtime/{identity,encrypted,snapshots,update-integrity}.ts\"",
+    "security:scan": "node scripts/security-scan.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
@@ -89,7 +92,8 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "verifyUpdateCodeSignature": true
     },
     "mac": {
       "target": [
@@ -97,7 +101,9 @@
         "zip"
       ],
       "hardenedRuntime": true,
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "minimumSystemVersion": "13.0",
+      "notarize": true
     },
     "linux": {
       "target": [
@@ -116,6 +122,9 @@
   "overrides": {
     "next": {
       "postcss": "8.5.28"
+    },
+    "exceljs": {
+      "uuid": "11.1.1"
     }
   }
 }

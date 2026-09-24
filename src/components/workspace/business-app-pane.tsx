@@ -1,4 +1,5 @@
 "use client";
+import { BusinessSnapshotPane } from "./business-snapshot";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -186,36 +187,6 @@ function RecordDetail({ record: r }: { record: BusinessRecord }) {
     </div>
   );
 }
-function RemoteContext({ connection }: { connection: MCPConnection }) {
-  return (
-    <div className="stack" style={{ padding: 16 }}>
-      <span className="eyebrow">CONNECTED CAPABILITIES</span>
-      <p className="tiny muted">
-        Ask G-Bot to retrieve context using these tools. This pane does not
-        limit which connected apps it can use.
-      </p>
-      {connection.tools.map((t) => (
-        <div className="panel stack" key={t.id}>
-          <h3>{t.label}</h3>
-          <p className="tiny">{t.description}</p>
-          <Badge tone={t.enabled ? "success" : "neutral"}>
-            {t.enabled
-              ? t.requiresApproval
-                ? "Approval before changes"
-                : "Read access enabled"
-              : "Permission disabled"}
-          </Badge>
-        </div>
-      ))}
-      {!connection.tools.length && <p>No tools discovered.</p>}
-      <Button asChild size="sm">
-        <Link href={`/connections/${connection.id}`}>
-          Manage tool permissions
-        </Link>
-      </Button>
-    </div>
-  );
-}
 export function BusinessAppPane({
   side,
   onClose,
@@ -321,7 +292,7 @@ export function BusinessAppPane({
       <div className="pane-content">
         {connection && available ? (
           data.runtime ? (
-            <RemoteContext connection={connection} />
+            <BusinessSnapshotPane connection={connection} refresh={refresh} />
           ) : (
             <Records
               key={`${connection.id}-${refresh}`}
@@ -347,7 +318,7 @@ export function BusinessAppPane({
         <span className={`health-dot ${!available ? "inactive" : ""}`} />
         {available
           ? data.runtime
-            ? "Connected · MCP capabilities"
+            ? "Connected · business context"
             : "Connected · simulated context"
           : "Context paused"}
         <span className="grow" />

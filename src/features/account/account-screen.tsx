@@ -1,4 +1,5 @@
 "use client";
+import {desktopCall} from "@/services/desktop/client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, SignOut, ShieldCheck } from "@phosphor-icons/react";
@@ -26,6 +27,7 @@ export function AccountScreen() {
     [logout, setLogout] = useState(false);
   const select = useWorkspace((s) => s.setConversation);
   if (!data) return <Loading />;
+  if(data.runtime?.production)return <div className="page"><PageHeading eyebrow="YOUR ACCOUNT" title="Account & plan" description="Manage your subscription, devices and security."/><div className="panel stack"><h2>{data.user?.name||"Your account"}</h2><p>{data.user?.email}</p><Badge>{data.entitlement.plan} · {data.entitlement.status}</Badge><p>{data.entitlement.maxActiveConnections} active connections. Saved connections are retained when your plan changes.</p><p>Billing and security open in your browser. Card details never enter G-Bot.</p><Button onClick={()=>void action.mutateAsync(()=>desktopCall("desktop.openAccount")).catch(()=>{})}>Manage account & billing</Button><Button onClick={()=>void action.mutateAsync(()=>desktopCall("desktop.refreshLicense")).catch(()=>{})}>Refresh device access</Button><Button onClick={()=>void action.mutateAsync(async()=>{await services.auth.logout();router.push('/login');}).catch(()=>{})}>Sign out</Button>{action.error&&<ErrorState message={action.error.message}/>}</div></div>;
   return (
     <div className="page">
       <PageHeading
