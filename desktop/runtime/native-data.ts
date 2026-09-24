@@ -125,7 +125,20 @@ export async function nativeData(
 export async function applyRetention(
   runtime: Runtime,
   days: 0 | 30 | 90 | 180,
+  confirm = false,
 ) {
+  if (confirm && days !== 0) {
+    const choice = await dialog.showMessageBox({
+      type: "warning",
+      buttons: ["Cancel", "Apply retention"],
+      defaultId: 0,
+      cancelId: 0,
+      message: `Delete conversations older than ${days} days?`,
+      detail:
+        "This permanently removes matching local history. Export a backup first if you want to keep it.",
+    });
+    if (choice.response !== 1) return;
+  }
   const prior = runtime.db;
   runtime.engine.stopAll();
   runtime.db = retain(prior, days);

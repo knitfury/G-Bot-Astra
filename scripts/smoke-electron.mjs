@@ -18,7 +18,7 @@ try{
  const disk=await fs.readFile(path.join(data,'real-v1','preferences.json'),'utf8');if(disk.includes('private-native-draft')||JSON.parse(disk).version!==2)throw Error('Native preferences were not encrypted');
  const workspace=await fs.readFile(path.join(data,'real-v1','workspace.json'),'utf8');if(JSON.parse(workspace).version!==2)throw Error('Workspace not encrypted');
  const demoWindow=app.waitForEvent('window');await page.getByRole('button',{name:'Explore Demo Mode',exact:true}).click();const demo=await demoWindow;await demo.getByRole('button',{name:'Explore the demo',exact:true}).click();await demo.getByRole('heading',{name:'What can we get done?'}).waitFor();
- if(await demo.evaluate(()=>!!window.gbot))throw Error('Demo obtained native bridge');await demo.locator('.record-detail').first().waitFor();
+ if(await demo.evaluate(()=>!!window.gbot))throw Error('Demo obtained native bridge');if(await demo.evaluate(()=>innerWidth<=1100))await demo.getByRole('button',{name:'Toggle left pane',exact:true}).click();await demo.locator('.record-detail:visible').first().waitFor();
  await fs.mkdir('test-results-electron',{recursive:true});await demo.screenshot({path:`test-results-electron/${packaged?'packaged-':''}demo-workspace.png`});await page.screenshot({path:`test-results-electron/${packaged?'packaged-':''}production-signin.png`});
  const unchanged=await fs.readFile(path.join(data,'real-v1','workspace.json'),'utf8');if(unchanged!==workspace)throw Error('Demo modified real workspace');
  console.log('Native isolation, production entitlement rejection, encrypted storage, separate Demo and business panes passed. Live login is an external acceptance gate.');

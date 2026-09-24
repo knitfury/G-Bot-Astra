@@ -57,12 +57,12 @@ export function Portal({ admin = false }: { admin?: boolean }) {
     }
   };
   const load = async () => {
-    const a = await control<Account>("account");
-    setAccount(a);
-    setName(a.name);
     const f = await accountClient().auth.mfa.listFactors();
     if (f.error) throw f.error;
     setFactors(f.data.totp);
+    const a = await control<Account>("account");
+    setAccount(a);
+    setName(a.name);
   };
   useEffect(() => {
     let active = true;
@@ -96,10 +96,7 @@ export function Portal({ admin = false }: { admin?: boolean }) {
           password,
           options: {
             data: { display_name: name },
-            emailRedirectTo: `location.origin/portal`.replace(
-              "location.origin",
-              location.origin,
-            ),
+            emailRedirectTo: location.origin + "/portal",
           },
         })
       : await c.auth.signInWithPassword({ email, password });

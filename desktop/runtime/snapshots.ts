@@ -292,8 +292,19 @@ export class Snapshots {
             AbortSignal.timeout(20_000),
           );
           // Permissions may change while a read is in flight: never display revoked results.
-          const after=this.connection(id),afterTool=after?.tools.find(candidate=>candidate.id===t.id);
-          if (!after || !after.enabled || after.url!==current.url || !afterTool?.enabled || afterTool.schemaHash!==t.schemaHash || afterTool.risk!=="read" || afterTool.requiresApproval || !slotAvailable(this.entitlement(),after.slot)) throw Error();
+          const after = this.connection(id),
+            afterTool = after?.tools.find((candidate) => candidate.id === t.id);
+          if (
+            !after ||
+            !after.enabled ||
+            after.url !== current.url ||
+            !afterTool?.enabled ||
+            afterTool.schemaHash !== t.schemaHash ||
+            afterTool.risk !== "read" ||
+            afterTool.requiresApproval ||
+            !slotAvailable(this.entitlement(), after.slot)
+          )
+            throw Error();
           const items = snapshotItems(raw, map!.kind);
           if (items === null) {
             failures++;

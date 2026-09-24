@@ -241,7 +241,7 @@ async function boot() {
           value = await runtime.services.snapshot();
         else if (request.operation === "desktop.catalog") value=await catalog.get();
         else if (request.operation === "desktop.data") value=await nativeData(runtime,directory,a[0] as string,a[1] as string);
-        else if (request.operation === "desktop.retention") value=await applyRetention(runtime,a[0] as 0|30|90|180);
+        else if (request.operation === "desktop.retention") value=await applyRetention(runtime,a[0] as 0|30|90|180,true);
         else if (request.operation === "desktop.signIn") value=await identity.browser(a[0] as "google"|"azure");
         else if (request.operation === "desktop.verifyMfa") value=await identity.mfa(a[0] as string);
         else if (request.operation === "desktop.refreshLicense") value=await identity.ensure(true);
@@ -258,6 +258,8 @@ async function boot() {
           await prefs.write(preferences);
         } else if (request.operation === "desktop.openDemo") {
           const demo = new BrowserWindow({width:1440,height:1000,minWidth:390,minHeight:600,title:"G-Bot · Demo Mode",webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,partition:"persist:gbot-demo"}});
+          demo.webContents.session.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));
+          demo.webContents.session.setPermissionCheckHandler(()=>false);
           demo.webContents.setWindowOpenHandler(()=>({action:"deny"}));
           demo.webContents.on("will-navigate",(event,url)=>{if(new URL(url).origin!==origin)event.preventDefault();});
           await demo.loadURL(origin);
