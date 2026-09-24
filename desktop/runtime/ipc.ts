@@ -126,7 +126,7 @@ export const schemas: Record<Operation, z.ZodType> = {
       .object({
         name: short,
         type: short,
-        bytes: z.array(z.number().int().min(0).max(255)).max(50 * 1024 * 1024),
+        bytes: z.union([z.instanceof(Uint8Array).refine(v=>v.byteLength<=50*1024*1024),z.array(z.number().int().min(0).max(255)).max(50 * 1024 * 1024)]),
       })
       .strict(),
   ]),
@@ -148,6 +148,7 @@ export const schemas: Record<Operation, z.ZodType> = {
   "desktop.openAccount": empty,
   "desktop.catalog": empty,
   "desktop.data": z.tuple([z.enum(["usage","clear-cache","clear-activity","backup","restore","json","markdown"]), z.string().max(1024)]),
+  "desktop.removeAttachment": z.tuple([id]),
   "desktop.retention": z.tuple([z.union([z.literal(0),z.literal(30),z.literal(90),z.literal(180)])]),
   "desktop.openDemo": empty,
   "desktop.diagnostics": empty,

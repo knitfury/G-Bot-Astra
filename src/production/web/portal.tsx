@@ -44,7 +44,13 @@ export function Portal({ admin = false }: { admin?: boolean }) {
     [confirmation, setConfirmation] = useState(""),
     [annual, setAnnual] = useState(false),
     [target, setTarget] = useState(""),
-    [adminData, setAdminData] = useState<unknown>(null);
+    [adminData, setAdminData] = useState<{
+      devices: Account["devices"];
+      billing: unknown;
+      audit: unknown;
+      events: unknown;
+    } | null>(null),
+    [adminAccount, setAdminAccount] = useState("");
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError("");
@@ -540,11 +546,14 @@ export function Portal({ admin = false }: { admin?: boolean }) {
               <Button
                 disabled={busy}
                 onClick={() =>
-                  void run(async () =>
-                    setAdminData(
-                      await control("admin-accounts", { account: target }),
-                    ),
-                  )
+                  void run(async () => {
+                    const result = await control<NonNullable<typeof adminData>>(
+                      "admin-accounts",
+                      { account: target },
+                    );
+                    setAdminData(result);
+                    setAdminAccount(target);
+                  })
                 }
               >
                 Inspect account
@@ -560,6 +569,22 @@ export function Portal({ admin = false }: { admin?: boolean }) {
               >
                 Reconcile entitlements
               </Button>
+              {adminData?.devices.map((device) => (
+                <div className="settings-row" key={device.id}>
+                  <div>
+                    <strong>{device.name}</strong>
+                    <p>
+                      {device.platform} · {device.version}
+                    </p>
+                  </div>
+                  <Button
+                    disabled={busy || !!device.revoked_at}
+                    onClick={() => setRemove("admin:" + device.id)}
+                  >
+                    {device.revoked_at ? "Deactivated" : "Deactivate device"}
+                  </Button>
+                </div>
+              ))}
               {adminData !== null && (
                 <pre className="code">{JSON.stringify(adminData, null, 2)}</pre>
               )}
@@ -628,6 +653,21 @@ export function Portal({ admin = false }: { admin?: boolean }) {
                   await accountClient().auth.signOut();
                   setSigned(false);
                   setAccount(null);
+                } else if (remove.startsWith("admin:")) {
+                  await control("admin-revoke", {
+                    account: adminAccount,
+                    device: remove.slice(6),
+                    confirm: true,
+                  });
+                  setAdminData(
+                    await control<NonNullable<typeof adminData>>(
+                      "admin-accounts",
+                      { account: adminAccount },
+                    ),
+                  );
+                  setNotice(
+                    "Device deactivated. The action was recorded in the audit log.",
+                  );
                 } else {
                   await control("revoke-device", { id: remove, confirm: true });
                   await load();

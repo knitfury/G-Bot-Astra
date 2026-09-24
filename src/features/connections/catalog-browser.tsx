@@ -55,7 +55,7 @@ export function CatalogBrowser() {
       </label>
       {message && <p role="status">{message}</p>}
       {catalog?.disabledFeatures.includes("recommended") ? (
-        <ErrorState message="Recommended connections are temporarily paused for a security review. Custom connections are unaffected." />
+        <ErrorState message="Recommended connections are temporarily paused for a security review. Connections using other endpoints remain available." />
       ) : (
         catalog?.entries
           .filter(

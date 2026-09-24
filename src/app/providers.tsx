@@ -16,6 +16,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     reduced = useWorkspace((s) => s.reducedMotion);
   useEffect(() => {
     services.hydrate();
+    document.documentElement.dataset.appReady = "true";
     return services.subscribe(() => {
       void client.invalidateQueries({ queryKey: ["snapshot"] });
     });

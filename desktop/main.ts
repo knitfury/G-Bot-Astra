@@ -12,6 +12,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import next from "next";
+import {validatePublicConfig} from "./runtime/public-config";
 import { autoUpdater } from "electron-updater";
 import {verifyUpdate,verifyInstaller,type UpdateManifest} from "./runtime/update-integrity";
 import {SafeTelemetry} from "./runtime/telemetry";
@@ -41,6 +42,9 @@ app.on("second-instance", () => {
 async function boot() {
   await app.whenReady();
   const root = app.getAppPath();
+  const configFile = join(root,"desktop-dist","public-config.json");
+  const bundled = validatePublicConfig(JSON.parse(await readFile(configFile,"utf8")));
+  for(const [key,value] of Object.entries(bundled)) { if(app.isPackaged || !process.env[key]) process.env[key]=value; }
   process.env.GBOT_DESKTOP_SERVER = "1";
   process.env.NEXT_TELEMETRY_DISABLED = "1";
   const serverApp = next({ dev: false, dir: root, hostname: "127.0.0.1" });
@@ -96,13 +100,16 @@ async function boot() {
     },
   );
   let verifiedManifest:UpdateManifest|undefined;
+  let verifiedDownload = false;
   const update = async (action: "check" | "download") => {
     if (!app.isPackaged)
       throw new DomainError(
         "CAPABILITY",
         "Updates require a signed packaged release and configured publishing feed.",
       );
+    await catalog.assertAllowed("", "updates");
     if(action==="check"){
+      verifiedManifest=undefined;verifiedDownload=false;
       const manifestUrl=process.env.GBOT_RELEASE_MANIFEST_URL,keys=JSON.parse(process.env.GBOT_UPDATE_PUBLIC_KEYS??"{}");
       if(!manifestUrl||!Object.keys(keys).length)throw new DomainError("CAPABILITY","No verified release channel is configured yet.");
       const response=await fetch(externalURL(manifestUrl),{redirect:"error",signal:AbortSignal.timeout(15000)});if(!response.ok)throw new DomainError("NETWORK","Release information is unavailable. Try again later.");
@@ -111,8 +118,12 @@ async function boot() {
       const result=await autoUpdater.checkForUpdates();if(result?.updateInfo.version!==verifiedManifest.version){verifiedManifest=undefined;throw new DomainError("CAPABILITY","Release feed does not match its signed manifest.");}
     }else{
       if(!verifiedManifest)throw new DomainError("CAPABILITY","Check for a verified update first.");
-      const files=await autoUpdater.downloadUpdate();for(const file of files)await verifyInstaller(file,verifiedManifest);
-      runtime.db.updateStatus="restart required";await runtime.save();
+      try {
+        const files=await autoUpdater.downloadUpdate();
+        if(!files.length)throw Error("No installer downloaded");
+        for(const file of files)await verifyInstaller(file,verifiedManifest);
+        verifiedDownload=true;runtime.db.updateStatus="restart required";await runtime.save();
+      }catch{verifiedDownload=false;runtime.db.updateStatus="failed";await runtime.save();throw new DomainError("CAPABILITY","The update could not be verified. Check for updates and try again.");}
     }
   };
   await vault.init();
@@ -129,7 +140,7 @@ async function boot() {
   });
   const catalog=new CatalogClient(vault,process.env.GBOT_CONTROL_PLANE_URL??"https://account.vidinex.ee",JSON.parse(process.env.GBOT_CATALOG_PUBLIC_KEYS??"{}"));
   const inference=new HTTPInference();
-  const guardedMcp={connect:async(...args:Parameters<typeof mcp.connect>)=>{await identity.ensure();return mcp.connect(...args);},disconnect:(id:string)=>mcp.disconnect(id),call:async(...args:Parameters<typeof mcp.call>)=>{await identity.ensure();return mcp.call(...args);}};
+  const guardedMcp={connect:async(...args:Parameters<typeof mcp.connect>)=>{await identity.ensure();await catalog.assertAllowed(args[0].url);return mcp.connect(...args);},disconnect:(id:string)=>mcp.disconnect(id),call:async(...args:Parameters<typeof mcp.call>)=>{await identity.ensure();await catalog.assertAllowed(args[0].url);return mcp.call(...args);}};
   runtime = new Runtime(
     new EncryptedStore(directory, "workspace.json", localDatabase, databaseShape,vault),
     vault,
@@ -241,6 +252,7 @@ async function boot() {
           value = await runtime.services.snapshot();
         else if (request.operation === "desktop.catalog") value=await catalog.get();
         else if (request.operation === "desktop.data") value=await nativeData(runtime,directory,a[0] as string,a[1] as string);
+        else if (request.operation === "desktop.removeAttachment") value=runtime.attachments.remove(a[0] as string);
         else if (request.operation === "desktop.retention") value=await applyRetention(runtime,a[0] as 0|30|90|180,true);
         else if (request.operation === "desktop.signIn") value=await identity.browser(a[0] as "google"|"azure");
         else if (request.operation === "desktop.verifyMfa") value=await identity.mfa(a[0] as string);
@@ -266,7 +278,7 @@ async function boot() {
         } else if (request.operation === "desktop.diagnostics") {
           value=JSON.stringify({format:"g-bot-support",version:app.getVersion(),platform:process.platform,architecture:process.arch,component:"desktop",credentialProtection:"OS secure storage",updateStatus:runtime.db.updateStatus},null,2);
         } else if (request.operation === "desktop.installUpdate") {
-          if (runtime.db.updateStatus !== "restart required")
+          if (!verifiedDownload || runtime.db.updateStatus !== "restart required")
             throw new DomainError(
               "INVALID_ARGUMENTS",
               "No verified update is ready.",

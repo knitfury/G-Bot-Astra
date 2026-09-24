@@ -77,7 +77,7 @@ export function desktopServices(): Services {
         return call("attachments.process", {
           name: file.name,
           type: file.type,
-          bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+          bytes: new Uint8Array(await file.arrayBuffer()),
         });
       },
       url: (...a) => call("attachments.url", ...a),

@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 begin;
-insert into auth.users values('11111111-1111-4111-8111-111111111111'),('22222222-2222-4222-8222-222222222222');
+insert into auth.users(id) values('11111111-1111-4111-8111-111111111111'),('22222222-2222-4222-8222-222222222222');
 insert into auth.sessions values('33333333-3333-4333-8333-333333333333','11111111-1111-4111-8111-111111111111');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
@@ -27,4 +27,22 @@ insert into public.operational_events(component,category,created_at) values('lic
 insert into public.audit_events(action,reason,created_at) values('license_issued','registration',now()-interval '13 months');
 select public.prune_metadata();
 do $$ begin if (select count(*) from public.operational_events)<>1 then raise exception 'Operational retention failed';end if;if exists(select 1 from public.audit_events where created_at<now()-interval '12 months') then raise exception 'Audit retention failed';end if;end $$;
+-- Outbox is privileged, leases prevent concurrent duplicate claims, and notices contain no business payload.
+set local role authenticated;
+do $$ begin begin perform count(*) from public.notification_outbox;raise exception 'Outbox exposed';exception when insufficient_privilege then null;end;end $$;
+reset role;
+update auth.users set email='fixture@example.invalid',email_confirmed_at=now() where id='11111111-1111-4111-8111-111111111111';
+do $$ declare claimed integer; begin
+ if (select count(*) from public.notification_outbox where kind='welcome')<>1 then raise exception 'Welcome event missing';end if;
+ select count(*) into claimed from public.claim_notifications();if claimed<3 then raise exception 'Lifecycle notices missing';end if;
+ if (select count(*) from public.claim_notifications())<>0 then raise exception 'Outbox double claim';end if;
+end $$;
+select public.publish_catalog('11111111-1111-4111-8111-111111111111','{"payload":"{\"sequence\":2}"}'::jsonb);
+do $$ begin
+ begin perform public.publish_catalog('11111111-1111-4111-8111-111111111111','{"payload":"{\"sequence\":1}"}'::jsonb);raise exception 'Catalog rollback accepted';exception when raise_exception then if sqlerrm<>'catalog_sequence' then raise;end if;end;
+end $$;
+delete from auth.users where id='11111111-1111-4111-8111-111111111111';
+do $$ begin
+ if not exists(select 1 from public.notification_outbox where kind='account_deleted' and recipient='fixture@example.invalid' and account_id is null) then raise exception 'Deletion receipt missing';end if;
+end $$;
 rollback;

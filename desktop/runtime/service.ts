@@ -581,6 +581,8 @@ export class Runtime {
         },
         remove: async (id) => {
           this.engine.stop(id);
+          const removed=this.db.conversations.find(c=>c.id===id);
+          for(const message of removed?.messages??[])for(const attachment of message.attachments??[])this.attachments.remove(attachment.id);
           this.db.conversations = this.db.conversations.filter(
             (c) => c.id !== id,
           );

@@ -21,7 +21,7 @@ export type Calls = GroupCalls & {
   "attachments.process": (file: {
     name: string;
     type: string;
-    bytes: number[];
+    bytes: number[] | Uint8Array;
   }) => Promise<Attachment>;
   "attachments.url": Services["attachments"]["url"];
   "desktop.pickFiles": () => Promise<Attachment[]>;
@@ -33,6 +33,7 @@ export type Calls = GroupCalls & {
   "desktop.openAccount": () => Promise<void>;
   "desktop.catalog": () => Promise<{catalog:import("../../production/model").Catalog|null;cached:boolean;message:string}>;
   "desktop.data": (action:"usage"|"clear-cache"|"clear-activity"|"backup"|"restore"|"json"|"markdown",password:string) => Promise<{message?:string;bytes?:number;freeBytes?:number;lowDisk?:boolean;cancelled?:boolean}>;
+  "desktop.removeAttachment": (id: string) => Promise<void>;
   "desktop.retention": (days:0|30|90|180) => Promise<void>;
   "desktop.openDemo": () => Promise<void>;
   "desktop.diagnostics": () => Promise<string>;

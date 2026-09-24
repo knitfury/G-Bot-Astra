@@ -220,9 +220,10 @@ export function ChatComposer({
               <AttachmentChip
                 key={a.id}
                 attachment={a}
-                onRemove={() =>
-                  setAttachments((list) => list.filter((x) => x.id !== a.id))
-                }
+                onRemove={() => {
+                  setAttachments((list) => list.filter((x) => x.id !== a.id));
+                  if(isDesktop())void desktopCall("desktop.removeAttachment",a.id).catch(()=>{});
+                }}
               />
             ))}
           </div>

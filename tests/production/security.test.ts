@@ -254,3 +254,36 @@ test("update manifest rejects downgrade, wrong platform, stale signatures and in
   await writeFile(file, "tampered");
   await assert.rejects(verifyInstaller(file, m));
 });
+
+test("desktop bundles accept only public configuration and HTTPS endpoints", async () => {
+  const { validatePublicConfig } =
+    await import("../../desktop/runtime/public-config");
+  assert.deepEqual(
+    validatePublicConfig({
+      GBOT_CONTROL_PLANE_URL: "https://account.example.com",
+    }),
+    { GBOT_CONTROL_PLANE_URL: "https://account.example.com" },
+  );
+  assert.throws(() =>
+    validatePublicConfig({ SUPABASE_SERVICE_ROLE_KEY: "secret" }),
+  );
+  assert.throws(() =>
+    validatePublicConfig({
+      GBOT_CONTROL_PLANE_URL: "http://account.example.com",
+    }),
+  );
+  assert.throws(() =>
+    validatePublicConfig({ GBOT_LICENSE_PUBLIC_KEYS: '{"k":123}' }),
+  );
+});
+
+test("operational notification templates contain only account notices and safe support links", async () => {
+  const { notification, noticeKind } =
+    await import("../../src/production/server/notifications");
+  for (const kind of noticeKind.options) {
+    const rendered = notification(kind, "https://account.example.com");
+    assert.match(rendered.textContent, /gbot@vidinex.ee/);
+    assert.match(rendered.textContent, /https:\/\/account.example.com\/portal/);
+    assert.ok(!JSON.stringify(rendered).includes("undefined"));
+  }
+});

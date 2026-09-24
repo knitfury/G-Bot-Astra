@@ -2,6 +2,33 @@ import { verifyCatalog } from "../../src/production/signed";
 import type { Catalog } from "../../src/production/model";
 import type { SecretVault } from "./storage";
 export class CatalogClient {
+  private checkedAt = 0;
+  private current: Catalog | null = null;
+  async assertAllowed(endpoint: string, feature?: "updates") {
+    if (!Object.keys(this.keys).length) return;
+    if (Date.now() - this.checkedAt > 60_000) {
+      const result = await this.get();
+      this.current = result.catalog;
+      this.checkedAt = Date.now();
+    }
+    const current = this.current;
+    if (!current || current.expiresAt <= Date.now()) return;
+    if (feature === "updates") {
+      if (current.disabledFeatures.includes("updates"))
+        throw Error("Updates are temporarily paused for a security review.");
+      return;
+    }
+    const entry = current.entries.find((entry) => entry.endpoint === endpoint);
+    if (
+      entry &&
+      (entry.status === "disabled" ||
+        current.disabledFeatures.includes("recommended"))
+    ) {
+      throw Error(
+        "This catalog endpoint is temporarily disabled for a security review. Your configuration is retained.",
+      );
+    }
+  }
   constructor(
     private vault: SecretVault,
     private origin: string,

@@ -24,7 +24,12 @@ export class Diagnostics {
           await writeFile(file,rows.join("\n")+(rows.length?"\n":""),{mode:0o600});
         }
         if (size > 1_000_000) await rename(file, file + ".previous");
-        const previous=await stat(file+".previous").catch(()=>null);if(previous&&previous.mtimeMs<Date.now()-30*86400000)await unlink(file+".previous");
+        const previous = await readFile(file+".previous","utf8").catch(()=>"");
+        if(previous){
+          const rows=previous.split("\n").filter(line=>{try{return Date.parse(JSON.parse(line).time)>=Date.now()-30*86400000;}catch{return false;}});
+          if(rows.length)await writeFile(file+".previous",rows.join("\n")+"\n",{mode:0o600});
+          else await unlink(file+".previous");
+        }
         this.telemetry?.record(event==="storage_failure"?"storage":event==="update_state"?"update":"desktop",event==="update_state"?"success":"failure");
         await appendFile(
           file,
