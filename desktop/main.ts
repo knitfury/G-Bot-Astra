@@ -587,7 +587,9 @@ async function boot() {
     event.preventDefault();
     shuttingDown = true;
     runtime.engine.stopAll();
+    console.info("[shutdown] Saving encrypted workspace");
     void runtime.save().finally(() => {
+      console.info("[shutdown] Encrypted workspace saved; quitting");
       server.close();
       app.quit();
     });

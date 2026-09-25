@@ -76,27 +76,33 @@ for (const color of ["orange", "purple", "blue", "green"])
         ),
       ).toBeTruthy();
       // Every visible UI surface must inherit the dark semantic palette.
-      const bright = await page
-        .locator(
-          ".panel, .dialog-content, .composer, .connection-card, input, textarea, select",
+      await expect
+        .poll(
+          () =>
+            page
+              .locator(
+                ".panel, .dialog-content, .composer, .connection-card, input, textarea, select",
+              )
+              .evaluateAll((elements) =>
+                elements
+                  .filter((e) => {
+                    if (!(e as HTMLElement).offsetParent) return false;
+                    const rgb =
+                      getComputedStyle(e)
+                        .backgroundColor.match(/[\d.]+/g)
+                        ?.map(Number) ?? [];
+                    return (
+                      rgb.length >= 3 &&
+                      (rgb.length < 4 || rgb[3] > 0.5) &&
+                      rgb.slice(0, 3).every((v) => v > 210)
+                    );
+                  })
+                  .map((e) => e.className),
+              )
+              .then((bright) => bright),
+          { message: "Visible surfaces settle on the persisted dark palette" },
         )
-        .evaluateAll((elements) =>
-          elements
-            .filter((e) => {
-              if (!(e as HTMLElement).offsetParent) return false;
-              const rgb =
-                getComputedStyle(e)
-                  .backgroundColor.match(/[\d.]+/g)
-                  ?.map(Number) ?? [];
-              return (
-                rgb.length >= 3 &&
-                (rgb.length < 4 || rgb[3] > 0.5) &&
-                rgb.slice(0, 3).every((v) => v > 210)
-              );
-            })
-            .map((e) => e.className),
-        );
-      expect(bright).toEqual([]);
+        .toEqual([]);
       await page.screenshot({
         animations: "disabled",
         path: info.outputPath(`${color}-${name}.png`),

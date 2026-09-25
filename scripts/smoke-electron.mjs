@@ -2,6 +2,7 @@ import { _electron as electron } from "playwright";
 import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 const data = await fs.mkdtemp(path.join(os.tmpdir(), "gbot-electron-"));
 const packaged = process.argv.includes("--packaged");
 const executablePath = packaged
@@ -15,13 +16,61 @@ const args = [
   ...(packaged ? [] : [path.resolve(".")]),
   `--user-data-dir=${data}`,
 ];
-const launch = () =>
-  electron.launch({
+const launch = async () => {
+  const instance = await electron.launch({
     executablePath,
     args,
     timeout: 60000,
     env: { ...process.env, NODE_ENV: "production" },
   });
+  instance.context().setDefaultTimeout(15000);
+  instance.on("console", (message) => console.log("[main]", message.text()));
+  instance
+    .process()
+    .stderr.on("data", (data) => console.log("[electron]", data.toString()));
+  await instance.evaluate(({ app, BrowserWindow }) => {
+    for (const event of [
+      "before-quit",
+      "will-quit",
+      "quit",
+      "window-all-closed",
+    ])
+      app.on(event, () =>
+        console.log(
+          `[lifecycle] ${event}; windows=${BrowserWindow.getAllWindows().length}`,
+        ),
+      );
+  });
+  return instance;
+};
+async function closeApp(instance, label) {
+  console.log(`[shutdown] ${label}: requesting graceful close`);
+  let timer;
+  try {
+    await Promise.race([
+      instance.close(),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(Error(`${label}: Electron did not exit within 45 seconds`)),
+          45000,
+        );
+      }),
+    ]);
+    console.log(`[shutdown] ${label}: process exited`);
+  } catch (error) {
+    // Cleanup only after a failing shutdown assertion; never report a killed app as a pass.
+    const child = instance.process();
+    if (child.exitCode === null && child.signalCode === null) {
+      if (process.platform === "win32")
+        execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+      else child.kill("SIGKILL");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const app = await launch();
 try {
   const page = await app.firstWindow({ timeout: 60000 });
@@ -164,7 +213,7 @@ try {
   }
   throw error;
 } finally {
-  await app.close();
+  await closeApp(app, "first launch");
 }
 const restarted = await launch();
 try {
@@ -182,5 +231,5 @@ try {
     throw Error("Encrypted preferences did not survive restart");
   console.log("Encrypted native restart persistence passed.");
 } finally {
-  await restarted.close();
+  await closeApp(restarted, "restart");
 }
