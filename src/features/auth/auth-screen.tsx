@@ -1,7 +1,8 @@
 "use client";
 import { DesktopAuth } from "./desktop-auth";
 import { useSnapshot } from "@/hooks/use-services";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { desktopCall } from "@/services/desktop/client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -56,7 +57,20 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
   });
   const desktop = useDesktop();
   const { data: snapshot } = useSnapshot();
+  useEffect(() => {
+    if (
+      mode === "welcome" &&
+      snapshot?.runtime?.production &&
+      snapshot.user &&
+      snapshot.entitlement.status === "active"
+    )
+      router.replace("/workspace");
+  }, [snapshot, router, mode]);
   async function demo() {
+    if (desktop && snapshot?.runtime?.production) {
+      await action.mutateAsync(() => desktopCall("desktop.openDemo"));
+      return;
+    }
     await action.mutateAsync(() => services.auth.demo());
     setConversation("");
     router.push("/workspace");
@@ -77,8 +91,10 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
     );
     router.push(mode === "signup" ? "/onboarding" : "/workspace");
   }
-  if (desktop && snapshot?.runtime?.production) return <DesktopAuth />;
-  if (desktop)
+  if (desktop && !snapshot) return <div role="status">Opening G-Bot…</div>;
+  if (desktop && snapshot?.runtime?.production && mode !== "welcome")
+    return <DesktopAuth key={mode} mode={mode} />;
+  if (desktop && !snapshot?.runtime?.production)
     return (
       <div className="auth-layout">
         <div className="auth-brand">
@@ -113,6 +129,9 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
             Your prompts and selected context go directly to your chosen AI
             provider. MCP calls go directly to your configured servers.
           </p>
+          {snapshot?.runtime?.production && snapshot.runtime.sessionNotice && (
+            <Notice>{snapshot.runtime.sessionNotice}</Notice>
+          )}
           {action.error && <ErrorState message={action.error.message} />}
         </section>
       </div>
@@ -126,7 +145,11 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
             G-Bot<span className="wordmark-dot">.</span>
           </strong>
         </Link>
-        <MockNote />
+        {snapshot?.runtime?.production ? (
+          <span className="tiny muted">Your providers. Your permissions.</span>
+        ) : (
+          <MockNote />
+        )}
       </div>
       <section className="auth-copy">
         <motion.div
@@ -211,7 +234,9 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
               >
                 {action.isPending
                   ? "Preparing your workspace…"
-                  : "Explore the demo"}
+                  : snapshot?.runtime?.production
+                    ? "Explore Demo"
+                    : "Explore the demo"}
                 <ArrowRight size={16} />
               </Button>
               <p className="tiny">
@@ -360,10 +385,14 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
               </p>
             </>
           )}
+          {snapshot?.runtime?.production && snapshot.runtime.sessionNotice && (
+            <Notice>{snapshot.runtime.sessionNotice}</Notice>
+          )}
           {action.error && <ErrorState message={action.error.message} />}
           <div className="auth-disclosure">
-            Phase 1 simulation. Use fictional details and demo keys. Credentials
-            are not verified against a live service.
+            {snapshot?.runtime?.production
+              ? "Your AI and app data flow directly to the providers you choose. You approve consequential actions."
+              : "Demo Mode uses fictional local business data. No AI key or live app connection is required, and no live actions are performed."}
           </div>
         </div>
       </section>

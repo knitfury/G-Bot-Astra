@@ -27,7 +27,7 @@ export function AccountScreen() {
     [logout, setLogout] = useState(false);
   const select = useWorkspace((s) => s.setConversation);
   if (!data) return <Loading />;
-  if(data.runtime?.production)return <div className="page"><PageHeading eyebrow="YOUR ACCOUNT" title="Account & plan" description="Manage your subscription, devices and security."/><div className="panel stack"><h2>{data.user?.name||"Your account"}</h2><p>{data.user?.email}</p><Badge>{data.entitlement.plan} · {data.entitlement.status}</Badge><p>{data.entitlement.maxActiveConnections} active connections. Saved connections are retained when your plan changes.</p><p>Billing and security open in your browser. Card details never enter G-Bot.</p><Button onClick={()=>void action.mutateAsync(()=>desktopCall("desktop.openAccount")).catch(()=>{})}>Manage account & billing</Button><Button onClick={()=>void action.mutateAsync(()=>desktopCall("desktop.refreshLicense")).catch(()=>{})}>Refresh device access</Button><Button onClick={()=>void action.mutateAsync(async()=>{await services.auth.logout();router.push('/login');}).catch(()=>{})}>Sign out</Button>{action.error&&<ErrorState message={action.error.message}/>}</div></div>;
+  if(data.runtime?.production)return <div className="page"><PageHeading eyebrow="YOUR ACCOUNT" title="Account & plan" description="Manage your subscription, devices and security."/><div className="panel stack"><h2>{data.user?.name||"Your account"}</h2><p>{data.user?.email}</p><Badge>{data.entitlement.plan} · {data.entitlement.status}</Badge><p>{data.entitlement.maxActiveConnections} active connections. Saved connections are retained when your plan changes.</p><p>Billing and security open in your browser. Card details never enter G-Bot.</p><Button onClick={()=>void action.mutateAsync(()=>desktopCall("desktop.openAccount")).catch(()=>{})}>Manage account & billing</Button><Button onClick={()=>void action.mutateAsync(()=>desktopCall("desktop.refreshLicense")).catch(()=>{})}>Refresh device access</Button><Button onClick={()=>void action.mutateAsync(async()=>{await services.auth.logout();router.push('/');}).catch(()=>{})}>Sign out</Button>{action.error&&<ErrorState message={action.error.message}/>}</div></div>;
   return (
     <div className="page">
       <PageHeading
@@ -155,7 +155,7 @@ export function AccountScreen() {
         <div>
           <h3>Sign out securely</h3>
           <p>
-            Clears mock credentials and disconnects providers and apps.
+            Clears Demo connection settings and disconnects the fictional apps.
             Configuration and history remain in this browser.
           </p>
         </div>
@@ -230,7 +230,7 @@ export function AccountScreen() {
                 .mutateAsync(() => services.auth.logout())
                 .then(() => {
                   select("");
-                  router.push("/login");
+                  router.push("/");
                 })
             }
           >

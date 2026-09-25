@@ -449,7 +449,7 @@ export function ProviderManager({ embedded = false }: { embedded?: boolean }) {
         <ArrowSquareOut size={15} />{" "}
         {data.runtime
           ? "Provider requests leave this device directly for your chosen service."
-          : "Provider requests are simulated in Phase 1."}
+          : "Demo Mode uses local examples. No AI provider is contacted."}
         No external inference is performed.
       </div>
       <Dialog

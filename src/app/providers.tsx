@@ -1,6 +1,6 @@
 "use client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { MotionConfig } from "framer-motion";
 import { services } from "@/services";
 import { useWorkspace } from "@/stores/workspace";
@@ -21,7 +21,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
       void client.invalidateQueries({ queryKey: ["snapshot"] });
     });
   }, [client]);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // Hydration initially renders the server defaults. Apply the actual persisted
+    // store snapshot before paint, not that stale render snapshot.
+    const {
+      color,
+      appearance,
+      reducedMotion: reduced,
+    } = useWorkspace.getState();
     document.documentElement.dataset.color = color;
     document.documentElement.dataset.appearance = appearance;
     document.documentElement.dataset.motion = reduced ? "reduced" : "full";

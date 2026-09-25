@@ -1,3 +1,4 @@
+import { DemoEntry } from "@/features/auth/demo-entry";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { WorkspaceLayout } from "@/components/workspace/workspace-layout";
@@ -19,6 +20,7 @@ export default async function Page({
   const { route } = await params;
   const path = route.join("/");
   if (path === "login" || path === "signup") return <AuthScreen mode={path} />;
+  if (path === "demo") return <DemoEntry />;
   if (path === "onboarding") return <Onboarding />;
   let screen: React.ReactNode;
   if (path === "workspace") screen = <WorkspaceLayout />;

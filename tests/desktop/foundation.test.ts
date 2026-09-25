@@ -53,6 +53,27 @@ test("IPC allowlist validates parameters and trusted main frame", () => {
     false,
   );
 });
+test("preload sender validation denies empty, malformed and non-app URLs without throwing", () => {
+  for (const url of [
+    "",
+    "not a URL",
+    "/workspace",
+    "about:blank",
+    "data:text/html,test",
+    "http://[",
+  ])
+    assert.equal(trustedSender(1, 1, url, "http://127.0.0.1:123", true), false);
+  assert.equal(
+    trustedSender(
+      2,
+      1,
+      "http://127.0.0.1:123/workspace",
+      "http://127.0.0.1:123",
+      true,
+    ),
+    false,
+  );
+});
 test("endpoint and header validation prevents embedded credentials, unsafe schemes and prototype paths", () => {
   for (const url of [
     "file:///etc/passwd",

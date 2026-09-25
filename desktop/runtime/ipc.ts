@@ -170,7 +170,12 @@ export function trustedSender(
   origin: string,
   isMainFrame: boolean,
 ) {
-  return (
-    senderId === windowId && isMainFrame && new URL(frameUrl).origin === origin
-  );
+  if (senderId !== windowId || !isMainFrame) return false;
+  try {
+    return new URL(frameUrl).origin === origin;
+  } catch {
+    // Electron can run preload for an initial frame with an empty URL.
+    // Reject it without throwing: a synchronous IPC caller must receive a reply.
+    return false;
+  }
 }

@@ -375,7 +375,7 @@ export function ChatComposer({
         description={
           data?.runtime
             ? "Share this link with your selected AI provider. G-Bot does not automatically fetch the page."
-            : "Add a URL as context. Page fetching is simulated in Phase 1."
+            : "Add a URL to explore context. Demo Mode does not fetch live pages."
         }
       >
         <form
