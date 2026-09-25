@@ -39,6 +39,15 @@ jobs:
           node -e "const p=require('./package.json');if(p.version!==process.env.REQUESTED_VERSION||!/^\d+\.\d+\.\d+$/.test(p.version))process.exit(1);if(!process.env.CSC_LINK||!process.env.CSC_KEY_PASSWORD)throw Error('BLOCKED: signing credentials required');"
       - run: npm run desktop:dist -- --publish never
         env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_GBOT_ENVIRONMENT: production
+          GBOT_CONTROL_PLANE_URL: ${{ vars.GBOT_CONTROL_PLANE_URL }}
+          GBOT_LICENSE_PUBLIC_KEYS: ${{ vars.GBOT_LICENSE_PUBLIC_KEYS }}
+          GBOT_CATALOG_PUBLIC_KEYS: ${{ vars.GBOT_CATALOG_PUBLIC_KEYS }}
+          GBOT_UPDATE_PUBLIC_KEYS: ${{ vars.GBOT_UPDATE_PUBLIC_KEYS }}
+          GBOT_RELEASE_MANIFEST_URL: ${{ vars.GBOT_RELEASE_MANIFEST_URL }}
+          GBOT_SENTRY_DSN: ${{ vars.GBOT_SENTRY_DSN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -46,6 +55,10 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CSC_IDENTITY_AUTO_DISCOVERY: true
       - run: node scripts/release-checksums.mjs
+      - run: node scripts/sign-release-manifest.mjs
+        env:
+          GBOT_UPDATE_KEY_ID: ${{ vars.GBOT_UPDATE_KEY_ID }}
+          GBOT_UPDATE_PRIVATE_KEY: ${{ secrets.GBOT_UPDATE_PRIVATE_KEY }}
       - uses: actions/upload-artifact@v4
         with:
           name: signed-candidate-${{ matrix.os }}
@@ -56,6 +69,7 @@ jobs:
             release/*yml
             release/*.blockmap
             release/SHA256SUMS.txt
+            release/stable-*.json
 # This workflow has no publish/release action and no write permission.
 # Configure release-signing with required human reviewers before any use.
 # Public hosting remains a separate manual approval after fresh install/update acceptance.

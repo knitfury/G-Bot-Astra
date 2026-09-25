@@ -134,6 +134,7 @@ export class ProductionIdentity {
   async logout() {
     this.cancelOAuth?.();
     if (this.client) await this.client.auth.signOut({ scope: "local" });
+    await this.vault.deleteMatching((key) => key.startsWith("identity:"));
     await this.vault.delete("offline-license");
     this.current = undefined;
     this.lastOnline = 0;
@@ -151,7 +152,7 @@ export class ProductionIdentity {
           req.headers.host === "127.0.0.1:43828" &&
           req.method === "GET" &&
           u.pathname === "/account/callback" &&
-          incoming.length === state.length &&
+          Buffer.byteLength(incoming) === Buffer.byteLength(state) &&
           timingSafeEqual(Buffer.from(incoming), Buffer.from(state)) &&
           !settled;
         if (!valid) {

@@ -287,3 +287,142 @@ test("operational notification templates contain only account notices and safe s
     assert.ok(!JSON.stringify(rendered).includes("undefined"));
   }
 });
+
+test("release manifest generator signs the exact updater artifact with the runtime schema", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdir, rm } = await import("node:fs/promises");
+  const { resolve } = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  const directory = await mkdtemp(join(tmpdir(), "gbot-manifest-"));
+  const pair = generateKeyPairSync("ed25519");
+  try {
+    await mkdir(join(directory, "release"));
+    await writeFile(
+      join(directory, "package.json"),
+      JSON.stringify({ version: "1.0.1" }),
+    );
+    await writeFile(
+      join(directory, "release", "G-Bot-1.0.1.exe"),
+      "synthetic updater test bytes",
+    );
+    const script = pathToFileURL(
+      resolve("scripts/sign-release-manifest.mjs"),
+    ).href;
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `Object.defineProperty(process,'platform',{value:'win32'});await import(${JSON.stringify(script)});`,
+      ],
+      {
+        cwd: directory,
+        env: {
+          ...process.env,
+          GBOT_UPDATE_KEY_ID: "fixture",
+          GBOT_UPDATE_PRIVATE_KEY: pair.privateKey
+            .export({ format: "pem", type: "pkcs8" })
+            .toString(),
+        },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const { verifyUpdate, verifyInstaller } =
+      await import("../../desktop/runtime/update-integrity");
+    const manifest = verifyUpdate(
+      JSON.parse(
+        await readFile(
+          join(directory, "release", `stable-win32-${process.arch}.json`),
+          "utf8",
+        ),
+      ),
+      {
+        fixture: pair.publicKey
+          .export({ format: "pem", type: "spki" })
+          .toString(),
+      },
+      "1.0.0",
+      "win32",
+      process.arch,
+    );
+    await verifyInstaller(join(directory, "release", manifest.file), manifest);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("catalog high-water survives expired cache and signed emergency control only pauses its feature", async () => {
+  const { CatalogClient } = await import("../../desktop/runtime/catalog");
+  const values = new Map<string, string>([["catalog-sequence", "6"]]);
+  const vault = {
+    get: async (k: string) => values.get(k),
+    set: async (k: string, v: string) => {
+      values.set(k, v);
+    },
+  } as unknown as SecretVault;
+  const pair = generateKeyPairSync("ed25519"),
+    keys = {
+      k: pair.publicKey.export({ format: "pem", type: "spki" }).toString(),
+    },
+    key = pair.privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+  const document = (sequence: number) =>
+    signEnvelope(
+      {
+        version: 1,
+        sequence,
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + DAY,
+        entries: [],
+        disabledFeatures: ["updates"],
+      },
+      "k",
+      key,
+    );
+  const prior = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => Response.json(document(5));
+    const catalog = new CatalogClient(vault, "https://account.example", keys);
+    assert.equal((await catalog.get()).catalog, null);
+    assert.equal(values.get("catalog-sequence"), "6");
+    globalThis.fetch = async () => Response.json(document(7));
+    await assert.rejects(catalog.assertAllowed("", "updates"), /paused/);
+    await catalog.assertAllowed("https://custom.example/mcp");
+    assert.equal(values.get("catalog-sequence"), "7");
+  } finally {
+    globalThis.fetch = prior;
+  }
+});
+test("signing out before auth client initialization clears persisted identity and offline license only", async () => {
+  const { ProductionIdentity } = await import("../../desktop/runtime/identity");
+  const values = new Map([
+    ["identity:session", "fixture"],
+    ["offline-license", "fixture"],
+    ["local-data-key-v2", "retain"],
+    ["device-id", "retain"],
+  ]);
+  const vault = {
+    delete: async (k: string) => {
+      values.delete(k);
+    },
+    deleteMatching: async (fn: (k: string) => boolean) => {
+      for (const k of values.keys()) if (fn(k)) values.delete(k);
+    },
+  } as unknown as SecretVault;
+  const identity = new ProductionIdentity(
+    vault,
+    {
+      supabaseUrl: "",
+      anonKey: "",
+      controlOrigin: "https://account.example",
+      environment: "development",
+      publicKeys: {},
+      version: "1.0.0",
+      platform: "win32",
+    },
+    async () => {},
+    async () => {},
+  );
+  await identity.logout();
+  assert.deepEqual([...values.keys()], ["local-data-key-v2", "device-id"]);
+});
