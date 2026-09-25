@@ -16,6 +16,7 @@ const args = [
   ...(packaged ? [] : [path.resolve(".")]),
   `--user-data-dir=${data}`,
 ];
+const nativeErrors = [];
 const launch = async () => {
   const instance = await electron.launch({
     executablePath,
@@ -24,7 +25,12 @@ const launch = async () => {
     env: { ...process.env, NODE_ENV: "production" },
   });
   instance.context().setDefaultTimeout(15000);
-  instance.on("console", (message) => console.log("[main]", message.text()));
+  instance.on("console", (message) => {
+    const text = message.text();
+    console.log("[main]", text);
+    if (/uncaughtException|TypeError: Invalid URL/.test(text))
+      nativeErrors.push(text);
+  });
   instance
     .process()
     .stderr.on("data", (data) => console.log("[electron]", data.toString()));
@@ -63,7 +69,9 @@ async function closeApp(instance, label) {
     const child = instance.process();
     if (child.exitCode === null && child.signalCode === null) {
       if (process.platform === "win32")
-        execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+        execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+          timeout: 10000,
+        });
       else child.kill("SIGKILL");
     }
     throw error;
@@ -155,6 +163,13 @@ try {
   await demo.locator('html[data-app-ready="true"]').waitFor({ timeout: 60000 });
 
   await demo.getByRole("heading", { name: "What can we get done?" }).waitFor();
+  await demo.reload();
+  await demo.getByRole("heading", { name: "What can we get done?" }).waitFor();
+  const demoWindows = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().map((w) => w.id),
+  );
+  if (demoWindows.length !== 1 || demoWindows[0] !== primaryId)
+    throw Error("Demo entry/reload created another native window");
   if (await demo.evaluate(() => !!window.gbot))
     throw Error("Demo obtained native bridge");
   if (await demo.evaluate(() => innerWidth <= 1100))
@@ -233,3 +248,7 @@ try {
 } finally {
   await closeApp(restarted, "restart");
 }
+
+if (nativeErrors.length)
+  throw Error(`Uncaught native errors: ${nativeErrors.join("\n")}`);
+await fs.rm(data, { recursive: true, force: true });

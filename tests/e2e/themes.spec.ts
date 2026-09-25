@@ -98,8 +98,7 @@ for (const color of ["orange", "purple", "blue", "green"])
                     );
                   })
                   .map((e) => e.className),
-              )
-              .then((bright) => bright),
+              ),
           { message: "Visible surfaces settle on the persisted dark palette" },
         )
         .toEqual([]);

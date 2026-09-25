@@ -354,17 +354,18 @@ async function boot() {
   session.defaultSession.setPermissionCheckHandler(() => false);
   // Read-only preload handshake. No business data or credentials cross this channel.
   ipcMain.on("gbot:context", (event) => {
-    event.returnValue =
-      !!window &&
-      !demoMode &&
-      !!event.senderFrame &&
-      trustedSender(
-        event.sender.id,
-        window.webContents.id,
-        event.senderFrame.url,
-        origin,
-        event.senderFrame === event.sender.mainFrame,
-      );
+    let trusted = false;
+    try {
+      const frame = event.senderFrame;
+      trusted = !!window && !window.isDestroyed() && !demoMode && !!frame &&
+        trustedSender(event.sender.id, window.webContents.id, frame.url, origin,
+          frame === event.sender.mainFrame);
+    } catch {
+      // A frame can disappear during navigation. Keep the denial.
+    } finally {
+      // Always release sendSync, including initial/tearing-down frames.
+      event.returnValue = trusted;
+    }
   });
   ipcMain.handle(
     "gbot:request",
@@ -587,9 +588,7 @@ async function boot() {
     event.preventDefault();
     shuttingDown = true;
     runtime.engine.stopAll();
-    console.info("[shutdown] Saving encrypted workspace");
     void runtime.save().finally(() => {
-      console.info("[shutdown] Encrypted workspace saved; quitting");
       server.close();
       app.quit();
     });
