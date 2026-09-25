@@ -1,4 +1,6 @@
 "use client";
+import { DesktopAuth } from "./desktop-auth";
+import { useSnapshot } from "@/hooks/use-services";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -53,6 +55,7 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
     defaultValues: { name: "", email: "", password: "", terms: false },
   });
   const desktop = useDesktop();
+  const { data: snapshot } = useSnapshot();
   async function demo() {
     await action.mutateAsync(() => services.auth.demo());
     setConversation("");
@@ -74,6 +77,7 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
     );
     router.push(mode === "signup" ? "/onboarding" : "/workspace");
   }
+  if (desktop && snapshot?.runtime?.production) return <DesktopAuth />;
   if (desktop)
     return (
       <div className="auth-layout">

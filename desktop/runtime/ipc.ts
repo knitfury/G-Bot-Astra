@@ -34,7 +34,7 @@ const attachment = z
     size: z
       .number()
       .nonnegative()
-      .max(10 * 1024 * 1024),
+      .max(50 * 1024 * 1024),
     mime: short,
     url: z.string().max(4000).optional(),
     preview: z.string().max(3_000_000).optional(),
@@ -54,7 +54,7 @@ const input = z
       "Helpdesk",
       "Calendar",
       "Documents",
-      "Projects",
+      "Projects", "Ecommerce", "Shipping", "Logistics", "Custom",
     ]),
     auth: z.enum(["OAuth", "Token", "None"]),
     slot: z.number().int().min(0).max(7),
@@ -78,6 +78,9 @@ export const schemas: Record<Operation, z.ZodType> = {
   "account.preferences": z.tuple([
     z
       .object({
+        historyRetention: z.union([z.literal(0),z.literal(30),z.literal(90),z.literal(180)]).optional(),
+        diagnosticsConsent: z.boolean().optional(),
+        onboardingStep: z.number().int().min(0).max(6).optional(),
         startup: z.boolean().optional(),
         notifications: z.boolean().optional(),
         activityVisible: z.boolean().optional(),
@@ -92,6 +95,8 @@ export const schemas: Record<Operation, z.ZodType> = {
   "providers.save": z.tuple([provider, id.optional()]),
   "providers.testSaved": z.tuple([id]),
   "providers.remove": z.tuple([id]),
+  "connections.snapshot": z.tuple([id, z.boolean().optional()]),
+  "tools.selectAll": z.tuple([id, z.boolean()]),
   "connections.list": empty,
   "connections.save": z.tuple([input, id.optional()]),
   "connections.connect": z.tuple([id, z.boolean()]),
@@ -121,7 +126,7 @@ export const schemas: Record<Operation, z.ZodType> = {
       .object({
         name: short,
         type: short,
-        bytes: z.array(z.number().int().min(0).max(255)).max(10 * 1024 * 1024),
+        bytes: z.union([z.instanceof(Uint8Array).refine(v=>v.byteLength<=50*1024*1024),z.array(z.number().int().min(0).max(255)).max(50 * 1024 * 1024)]),
       })
       .strict(),
   ]),
@@ -137,6 +142,16 @@ export const schemas: Record<Operation, z.ZodType> = {
   "desktop.readPreferences": empty,
   "desktop.savePreferences": z.tuple([z.string().max(500_000).nullable()]),
   "desktop.installUpdate": empty,
+  "desktop.signIn": z.tuple([z.enum(["google","azure"])]),
+  "desktop.verifyMfa": z.tuple([z.string().regex(/^\d{6}$/)]),
+  "desktop.refreshLicense": empty,
+  "desktop.openAccount": empty,
+  "desktop.catalog": empty,
+  "desktop.data": z.tuple([z.enum(["usage","clear-cache","clear-activity","backup","restore","json","markdown"]), z.string().max(1024)]),
+  "desktop.removeAttachment": z.tuple([id]),
+  "desktop.retention": z.tuple([z.union([z.literal(0),z.literal(30),z.literal(90),z.literal(180)])]),
+  "desktop.openDemo": empty,
+  "desktop.diagnostics": empty,
 };
 export function validateOperation(
   operation: unknown,

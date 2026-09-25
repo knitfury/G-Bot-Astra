@@ -26,7 +26,11 @@ export type Category =
   | "Helpdesk"
   | "Calendar"
   | "Documents"
-  | "Projects";
+  | "Projects"
+  | "Ecommerce"
+  | "Shipping"
+  | "Logistics"
+  | "Custom";
 export type ProviderType =
   | "Anthropic-compatible"
   | "OpenAI-compatible"
@@ -212,6 +216,9 @@ export interface Diagnostics {
   authFailure: "none" | "credentials" | "network";
 }
 export interface Preferences {
+  historyRetention?: 0 | 30 | 90 | 180;
+  diagnosticsConsent?: boolean;
+  onboardingStep?: number;
   startup: boolean;
   notifications: boolean;
   activityVisible: boolean;
@@ -238,6 +245,7 @@ export interface Database {
     | "failed";
   runtime?: {
     mode: "desktop";
+    production?: boolean;
     version: string;
     notice: string;
     updateError?: string;

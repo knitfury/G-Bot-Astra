@@ -40,6 +40,7 @@ export interface AIProviderService {
   remove(id: string): Promise<void>;
 }
 export interface MCPConnectionService {
+  snapshot(id: string, refresh?: boolean): Promise<import("@/types/snapshot").BusinessSnapshot>;
   list(): Promise<MCPConnection[]>;
   save(
     input: Pick<
@@ -59,6 +60,7 @@ export interface MCPConnectionService {
   records(category: Category): Promise<BusinessRecord[]>;
 }
 export interface MCPToolService {
+  selectAll(connectionId: string, enabled: boolean): Promise<void>;
   toggle(connectionId: string, toolId: string, enabled: boolean): Promise<void>;
 }
 export interface ConversationService {

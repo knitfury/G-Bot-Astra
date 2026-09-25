@@ -14,21 +14,19 @@ const executablePath = packaged
 const args = [
   ...(packaged ? [] : [path.resolve(".")]),
   `--user-data-dir=${data}`,
-  ...(process.env.GBOT_HEADLESS === "1"
-    ? ["--no-sandbox", "--ozone-platform=headless", "--disable-gpu"]
-    : []),
 ];
-const app = await electron.launch({
-  executablePath,
-  args,
-  timeout: 60000,
-  env: { ...process.env, NODE_ENV: "production" },
-});
+const launch = () =>
+  electron.launch({
+    executablePath,
+    args,
+    timeout: 60000,
+    env: { ...process.env, NODE_ENV: "production" },
+  });
+const app = await launch();
 try {
   const page = await app.firstWindow({ timeout: 60000 });
-  page.on("pageerror", (e) => console.error("renderer error:", e.message));
   await page
-    .getByRole("button", { name: "Open local workspace" })
+    .getByRole("heading", { name: "Welcome back" })
     .waitFor({ timeout: 60000 });
   const isolation = await page.evaluate(() => ({
     node: typeof window.require,
@@ -36,68 +34,116 @@ try {
   }));
   if (isolation.node !== "undefined" || !isolation.bridge)
     throw Error("Renderer isolation failed");
-  const forbidden = await page.evaluate(() =>
-    window.gbot.call("shell.exec", ["anything"]),
+  for (const [op, args] of [
+    ["shell.exec", ["anything"]],
+    ["entitlements.change", ["business"]],
+    ["auth.demo", []],
+  ]) {
+    const result = await page.evaluate(
+      ([op, args]) => window.gbot.call(op, args),
+      [op, args],
+    );
+    if (result.ok) throw Error(`Production boundary bypass: ${op}`);
+  }
+  const prefs = JSON.stringify({
+    state: {
+      color: "blue",
+      appearance: "dark",
+      reducedMotion: true,
+      drafts: { test: "private-native-draft" },
+    },
+    version: 1,
+  });
+  const saved = await page.evaluate(
+    (value) => window.gbot.call("desktop.savePreferences", [value]),
+    prefs,
   );
-  if (forbidden.ok) throw Error("IPC allowlist bypass");
-  await page.getByRole("button", { name: "Open local workspace" }).click();
-  await page.getByRole("heading", { name: "What can we get done?" }).waitFor();
-  await fs.mkdir("test-results-electron", { recursive: true });
-  await page.screenshot({
-    path: `test-results-electron/${packaged ? "packaged-" : ""}workspace.png`,
-  });
-  await page.goto(new URL("/settings", page.url()).href);
-  await page.getByRole("radio", { name: "blue", exact: true }).check();
-  await page.getByRole("radio", { name: "dark", exact: true }).check();
-  await page.screenshot({
-    path: "test-results-electron/settings-dark.png",
-    animations: "disabled",
-  });
+  if (!saved.ok) throw Error("OS-protected preferences could not be saved");
   await page.reload();
   await page
     .locator('html[data-color="blue"][data-appearance="dark"]')
     .waitFor();
-  const persisted = await page.evaluate(() =>
-    localStorage.getItem("gbot-workspace-v1"),
+  const disk = await fs.readFile(
+    path.join(data, "real-v1", "preferences.json"),
+    "utf8",
   );
-  if (persisted)
-    throw Error("Desktop preferences leaked into browser persistence");
-  await page.getByRole("button", { name: "About", exact: true }).click();
-  if (!packaged) {
-    await page
-      .getByRole("button", { name: "Check for updates", exact: true })
+  if (disk.includes("private-native-draft") || JSON.parse(disk).version !== 2)
+    throw Error("Native preferences were not encrypted");
+  const workspace = await fs.readFile(
+    path.join(data, "real-v1", "workspace.json"),
+    "utf8",
+  );
+  if (JSON.parse(workspace).version !== 2)
+    throw Error("Workspace not encrypted");
+  const demoWindow = app.waitForEvent("window");
+  await page
+    .getByRole("button", { name: "Explore Demo Mode", exact: true })
+    .click();
+  const demo = await demoWindow;
+  await demo.locator('html[data-app-ready="true"]').waitFor({ timeout: 60000 });
+  await demo
+    .getByRole("button", { name: "Explore the demo", exact: true })
+    .click();
+  await demo.getByRole("heading", { name: "What can we get done?" }).waitFor();
+  if (await demo.evaluate(() => !!window.gbot))
+    throw Error("Demo obtained native bridge");
+  if (await demo.evaluate(() => innerWidth <= 1100))
+    await demo
+      .getByRole("button", { name: "Toggle left pane", exact: true })
       .click();
-    await page
-      .getByRole("alert")
-      .filter({ hasText: "Updates require a signed" })
-      .waitFor();
-  }
-  await page.screenshot({
-    path: "test-results-electron/update-state.png",
-    animations: "disabled",
+  await demo.locator(".record-detail:visible").first().waitFor();
+  await fs.mkdir("test-results-electron", { recursive: true });
+  await demo.screenshot({
+    path: `test-results-electron/${packaged ? "packaged-" : ""}demo-workspace.png`,
   });
-  console.log(
-    "Electron smoke passed: production renderer, isolated Node access, IPC rejection, local profile, native preference persistence, update prerequisite state.",
+  await page.screenshot({
+    path: `test-results-electron/${packaged ? "packaged-" : ""}production-signin.png`,
+  });
+  const unchanged = await fs.readFile(
+    path.join(data, "real-v1", "workspace.json"),
+    "utf8",
   );
+  if (unchanged !== workspace) throw Error("Demo modified real workspace");
+  console.log(
+    "Native isolation, production entitlement rejection, encrypted storage, separate Demo and business panes passed. Live login is an external acceptance gate.",
+  );
+} catch (error) {
+  await fs.mkdir("test-results-electron", { recursive: true });
+  for (const [index, page] of app.windows().entries()) {
+    await page
+      .screenshot({
+        path: `test-results-electron/failure-${packaged ? "packaged-" : ""}${index}.png`,
+      })
+      .catch(() => {});
+    console.error(
+      "Native failure page",
+      index,
+      page.url(),
+      await page
+        .locator("body")
+        .innerText()
+        .catch(() => ""),
+    );
+  }
+  throw error;
 } finally {
   await app.close();
 }
-
-const restarted = await electron.launch({
-  executablePath,
-  args,
-  timeout: 60000,
-  env: { ...process.env, NODE_ENV: "production" },
-});
+const restarted = await launch();
 try {
   const page = await restarted.firstWindow({ timeout: 60000 });
   await page
-    .locator('html[data-color="blue"][data-appearance="dark"]')
+    .getByRole("heading", { name: "Welcome back" })
     .waitFor({ timeout: 60000 });
-  await page.getByRole("heading", { name: "What can we get done?" }).waitFor();
-  console.log(
-    `Electron ${packaged ? "packaged" : "source"} restart persistence passed.`,
+  await page
+    .locator('html[data-color="blue"][data-appearance="dark"]')
+    .waitFor();
+  const r = await page.evaluate(() =>
+    window.gbot.call("desktop.readPreferences", []),
   );
+  if (!r.ok || !r.value.includes("private-native-draft"))
+    throw Error("Encrypted preferences did not survive restart");
+  console.log("Encrypted native restart persistence passed.");
 } finally {
   await restarted.close();
 }

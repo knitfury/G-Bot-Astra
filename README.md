@@ -6,7 +6,7 @@ A local-first Electron AI business workspace with real BYOK providers and remote
 
 ![G-Bot desktop workspace](docs/screenshots/phase2/orange-light-1440-workspace.webp)
 
-## Real desktop integrations (Phase 2)
+## Phase 3 production candidate
 
 Use Node 22 LTS on Windows or macOS:
 
@@ -16,7 +16,9 @@ npm run desktop:build
 npm run desktop:start
 ```
 
-Open the local workspace, add/test your AI provider and model, connect a remote MCP URL, then explicitly enable discovered tools. Read operations run autonomously; consequential actions require approval. Credentials are encrypted by the OS. Local profiles and plan controls are development-only; production identity/licensing is not yet connected.
+Configure the public account endpoints and verification keys before building, then sign in through the production account flow. Add/test your AI provider and model, connect a remote MCP URL, and explicitly enable discovered tools. Authorized reads populate business snapshots; consequential actions require exact approval. Credentials, history and drafts are encrypted on the device. Demo runs in a separate unprivileged window.
+
+This branch is a release candidate, not a published release. Hosted auth/billing, real-service acceptance and production signing remain external gates. See [Phase 3 operations](docs/phase3/OPERATIONS.md), [UX remediation](docs/phase3/UX_REMEDIATION.md), [security and recovery](docs/phase3/SECURITY_AND_RECOVERY.md), and [external acceptance](docs/phase3/EXTERNAL_ACCEPTANCE.md).
 
 `npm run desktop:package` creates an unpacked build; `npm run desktop:dist` creates installers for your OS. Signing, notarization and public update hosting require owner configuration. See the [Phase 2 handoff](docs/PHASE2_HANDOFF.md).
 

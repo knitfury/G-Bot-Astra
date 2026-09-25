@@ -148,7 +148,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span>
             <SquaresFour size={12} /> A little less switching. A lot more doing.
           </span>
-          <Link href="/settings">G-Bot 0.1.0</Link>
+          <Link href="/settings">G-Bot {data.runtime?.version ?? "Demo"}</Link>
         </footer>
       </div>
       <nav className="mobile-nav" aria-label="Mobile navigation">

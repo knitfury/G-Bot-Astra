@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import { Providers } from "./providers";
 import "@/styles/globals.css";
 import "@/styles/product.css";
+import "@/styles/production.css";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "G-Bot — Your business, working together",
   description:
-    "A configurable AI business workspace. Phase 1 interactive frontend simulation.",
+    "Your AI, your apps, one private business workspace.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icon.svg" },
 };

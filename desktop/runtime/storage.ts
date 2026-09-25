@@ -132,6 +132,9 @@ export class SecretVault {
       this.values = {};
     });
   }
+  async deleteMatching(predicate: (id: string) => boolean) {
+    await this.mutate(async()=>{const next=Object.fromEntries(Object.entries(this.values).filter(([id])=>!predicate(id)));await this.store.write(next);this.values=next;});
+  }
   has(id: string) {
     return !!this.values[id];
   }

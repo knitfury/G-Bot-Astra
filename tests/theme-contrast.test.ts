@@ -57,3 +57,7 @@ for (const color of themeColors)
       }
     });
   }
+test('Neutral Dark surfaces, text and accent are achromatic',()=>{
+ const neutral=blocks.find(b=>b.selector==='[data-color="neutral"][data-appearance="dark"]');assert.ok(neutral);
+ for(const [name,color] of Object.entries(neutral.tokens)){const rgb=color.slice(1);assert.equal(rgb.slice(0,2),rgb.slice(2,4),name);assert.equal(rgb.slice(2,4),rgb.slice(4,6),name);}
+});

@@ -1,6 +1,6 @@
 {
   "name": "g-bot-astra",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
@@ -18,7 +18,10 @@
     "desktop:dist": "npm run desktop:build && electron-builder",
     "test:desktop": "node --import tsx --test tests/desktop/*.test.ts",
     "desktop:demo": "electron . --demo",
-    "test:electron": "node scripts/smoke-electron.mjs"
+    "test:electron": "node scripts/smoke-electron.mjs",
+    "test:production": "node --import tsx --test tests/production/*.test.ts",
+    "lint": "prettier --check \"src/production/**/*.{ts,tsx}\" \"desktop/runtime/{identity,encrypted,snapshots,update-integrity}.ts\"",
+    "security:scan": "node scripts/security-scan.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
@@ -26,19 +29,25 @@
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",
+    "@sentry/node": "^11.0.0",
+    "@supabase/supabase-js": "^2.117.1",
     "@tailwindcss/postcss": "4.2.1",
     "@tanstack/react-query": "^5.90.0",
     "ajv": "^8.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "electron-updater": "^6.8.9",
+    "exceljs": "^4.4.0",
     "framer-motion": "^12.23.0",
+    "mammoth": "^1.12.3",
     "next": "15.5.25",
+    "pdfjs-dist": "^6.3.289",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "react-hook-form": "^7.62.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "stripe": "^22.6.2",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "4.2.1",
     "zod": "^4.1.5",
@@ -83,7 +92,8 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "verifyUpdateCodeSignature": true
     },
     "mac": {
       "target": [
@@ -91,7 +101,9 @@
         "zip"
       ],
       "hardenedRuntime": true,
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "minimumSystemVersion": "13.0",
+      "notarize": true
     },
     "linux": {
       "target": [
@@ -110,6 +122,9 @@
   "overrides": {
     "next": {
       "postcss": "8.5.28"
+    },
+    "exceljs": {
+      "uuid": "11.1.1"
     }
   }
 }

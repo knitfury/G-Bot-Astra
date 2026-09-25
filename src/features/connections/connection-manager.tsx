@@ -1,4 +1,5 @@
 "use client";
+import { CatalogBrowser } from "./catalog-browser";
 import { useState } from "react";
 import { AsyncCheckbox } from "@/components/ui/async-checkbox";
 import Link from "next/link";
@@ -47,6 +48,10 @@ export const appCategories: Category[] = [
   "Calendar",
   "Documents",
   "Projects",
+  "Ecommerce",
+  "Shipping",
+  "Logistics",
+  "Custom",
 ];
 const schema = z.object({
   name: z.string().min(2, "Enter a connection name."),
@@ -85,7 +90,7 @@ export function ConnectionForm({
     defaultValues: {
       name: connection?.name || "",
       url: connection?.url || "https://demo.example.com/mcp",
-      category: connection?.category || appCategories[slot],
+      category: connection?.category || "Email",
       auth: connection?.auth || "OAuth",
       token: "",
       authHeader: connection?.authHeader || "Authorization",
@@ -337,6 +342,7 @@ export function ConnectionManager({
           Compare plans <ArrowUpRight size={12} />
         </Link>
       </div>
+      {data.runtime?.production && <CatalogBrowser />}
       <div className="connection-grid">
         {Array.from({ length: 8 }, (_, i) => {
           const c = data.connections.find((c) => c.slot === i),
@@ -347,13 +353,16 @@ export function ConnectionManager({
               key={i}
             >
               <div className="row between">
-                <AppIcon category={c?.category || appCategories[i]} />
+                {c ? <AppIcon category={c.category} /> : <Plugs size={24} />}
                 <span className="eyebrow">
                   SLOT {String(i + 1).padStart(2, "0")}
                 </span>
               </div>
-              <h3>{c?.name || `Connect ${appCategories[i].toLowerCase()}`}</h3>
-              <p>{c?.category || "Your choice of business app"}</p>
+              <h3>{c?.name || "Add Connection"}</h3>
+              <p>
+                {c?.category ||
+                  "Connect a compatible business app or remote MCP server."}
+              </p>
               {!available ? (
                 <>
                   <Badge tone="warning">
@@ -550,8 +559,9 @@ export function ConnectionDetail({ id }: { id: string }) {
             <h2>{c.auth} authentication</h2>
             <p>{c.maskedCredential}</p>
             <Notice>
-              No real OAuth token is stored. Phase 2 will use native secure
-              credential storage.
+              {data.runtime
+                ? "Credentials are protected by your operating system. Reconnect to renew authorization."
+                : "Demo authorization is simulated. No real OAuth token is stored."}
             </Notice>
             <Button disabled={!available} onClick={() => setConsent(true)}>
               Review permissions & reconnect
@@ -567,6 +577,43 @@ export function ConnectionDetail({ id }: { id: string }) {
             <p>
               Changes apply immediately. Write actions always require approval.
             </p>
+            {!!c.tools.length && (
+              <div className="row wrap permission-bulk">
+                <span
+                  role="status"
+                  aria-label={
+                    c.tools.every((t) => t.enabled)
+                      ? "All tools selected"
+                      : c.tools.some((t) => t.enabled)
+                        ? "Partial tool selection"
+                        : "No tools selected"
+                  }
+                >
+                  {c.tools.filter((t) => t.enabled).length} of {c.tools.length}{" "}
+                  enabled
+                </span>
+                <Button
+                  disabled={action.isPending}
+                  onClick={() =>
+                    void action
+                      .mutateAsync(() => services.tools.selectAll(c.id, true))
+                      .catch(() => {})
+                  }
+                >
+                  Select All
+                </Button>
+                <Button
+                  disabled={action.isPending}
+                  onClick={() =>
+                    void action
+                      .mutateAsync(() => services.tools.selectAll(c.id, false))
+                      .catch(() => {})
+                  }
+                >
+                  Deselect All
+                </Button>
+              </div>
+            )}
             {!c.tools.length ? (
               <Empty
                 title="No tools discovered"
@@ -580,13 +627,15 @@ export function ConnectionDetail({ id }: { id: string }) {
               c.tools.map((t) => (
                 <div className="tool-permission" key={t.id}>
                   <div className="grow">
-                    <h3>{t.label}</h3>
+                    <h3 title={t.label}>{t.label}</h3>
                     <p>{t.description}</p>
                     <div className="row">
                       <Badge tone={t.requiresApproval ? "warning" : "neutral"}>
                         {t.requiresApproval ? "Approval required" : "Read only"}
                       </Badge>
-                      <code className="tiny muted">{t.name}</code>
+                      <code className="tiny muted" title={t.name}>
+                        {t.name}
+                      </code>
                     </div>
                   </div>
                   <label className="check-row">

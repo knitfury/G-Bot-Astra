@@ -1,4 +1,5 @@
 "use client";
+import { ProductionOnboarding } from "./production-onboarding";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ArrowRight, ArrowLeft } from "@phosphor-icons/react";
@@ -16,6 +17,7 @@ export function Onboarding() {
     action = useAction(),
     router = useRouter();
   if (!data) return <Loading />;
+  if (data.runtime?.production) return <ProductionOnboarding />;
   return (
     <div className="onboarding">
       <div className="row between">

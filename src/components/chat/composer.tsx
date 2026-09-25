@@ -220,9 +220,10 @@ export function ChatComposer({
               <AttachmentChip
                 key={a.id}
                 attachment={a}
-                onRemove={() =>
-                  setAttachments((list) => list.filter((x) => x.id !== a.id))
-                }
+                onRemove={() => {
+                  setAttachments((list) => list.filter((x) => x.id !== a.id));
+                  if(isDesktop())void desktopCall("desktop.removeAttachment",a.id).catch(()=>{});
+                }}
               />
             ))}
           </div>
@@ -341,7 +342,7 @@ export function ChatComposer({
       {error && <ErrorState message={error} />}
       <p className="composer-caption">
         Your apps provide context. You stay in control.{" "}
-        <span>Simulated responses · check important details.</span>
+        <span>{data?.runtime ? "Check important details before acting." : "Simulated responses · check important details."}</span>
       </p>
       <input
         className="sr-only"

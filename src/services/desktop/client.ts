@@ -45,6 +45,7 @@ export function desktopServices(): Services {
       remove: (...a) => call("providers.remove", ...a),
     },
     connections: {
+      snapshot: (...a) => call("connections.snapshot", ...a),
       list: () => call("connections.list"),
       save: (...a) => call("connections.save", ...a),
       connect: (...a) => call("connections.connect", ...a),
@@ -52,7 +53,7 @@ export function desktopServices(): Services {
       remove: (...a) => call("connections.remove", ...a),
       records: (...a) => call("connections.records", ...a),
     },
-    tools: { toggle: (...a) => call("tools.toggle", ...a) },
+    tools: { selectAll: (...a) => call("tools.selectAll", ...a), toggle: (...a) => call("tools.toggle", ...a) },
     conversations: {
       list: () => call("conversations.list"),
       create: (...a) => call("conversations.create", ...a),
@@ -71,12 +72,12 @@ export function desktopServices(): Services {
     activity: { list: () => call("activity.list") },
     attachments: {
       process: async (file) => {
-        if (file.size > 10 * 1024 * 1024)
-          throw new Error("Maximum file size is 10 MB.");
+        if (file.size > 50 * 1024 * 1024)
+          throw new Error("Maximum file size is 50 MB.");
         return call("attachments.process", {
           name: file.name,
           type: file.type,
-          bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+          bytes: new Uint8Array(await file.arrayBuffer()),
         });
       },
       url: (...a) => call("attachments.url", ...a),
