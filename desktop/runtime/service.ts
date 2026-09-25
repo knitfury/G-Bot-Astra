@@ -645,6 +645,23 @@ export class Runtime {
       },
     };
   }
+  async restoreSession() {
+    if (!this.identity || !this.db.user) return;
+    try {
+      const license = await this.identity.ensure(true);
+      if (license.account !== this.db.user?.id)
+        throw new Error("Account mismatch");
+      this.db.entitlement = entitlementFor(license.plan);
+      if (this.db.runtime) this.db.runtime.sessionNotice = undefined;
+    } catch {
+      this.db.user = null;
+      this.db.entitlement.status = "expired";
+      if (this.db.runtime)
+        this.db.runtime.sessionNotice =
+          "Your session could not be restored. Sign in again to continue. Your local data is retained.";
+    }
+    await this.save();
+  }
   async init() {
     await this.vault.init();
     this.db = await this.store.read();

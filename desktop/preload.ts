@@ -9,4 +9,7 @@ const api: DesktopBridge = {
     return () => ipcRenderer.removeListener("gbot:changed", handler);
   },
 };
-contextBridge.exposeInMainWorld("gbot", Object.freeze(api));
+// The native process owns this mode. Demo never receives the live bridge, even after a reload.
+if (ipcRenderer.sendSync("gbot:context") === true) {
+  contextBridge.exposeInMainWorld("gbot", Object.freeze(api));
+}

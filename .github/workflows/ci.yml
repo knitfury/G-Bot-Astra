@@ -49,7 +49,7 @@ jobs:
       - run: npm ci
       - run: npm run desktop:build
       - run: npm run test:electron
-      - run: npx electron-builder --dir --publish never
+      - run: npm run desktop:dist -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - run: node scripts/smoke-electron.mjs --packaged

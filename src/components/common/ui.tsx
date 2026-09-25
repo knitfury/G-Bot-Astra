@@ -174,7 +174,7 @@ export function MockNote() {
       <Lock size={12} />{" "}
       {desktop
         ? "Local workspace · live integrations"
-        : "Demo environment · no live actions"}
+        : "Demo Mode · Fictional data · No live actions"}
     </span>
   );
 }

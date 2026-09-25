@@ -30,7 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
   useEffect(() => {
-    if (data && !data.user) router.replace("/login");
+    if (data && !data.user) router.replace("/");
   }, [data, router]);
   if (!ready || !data?.user) return <Loading />;
   const active = data.connections.filter((c) =>
@@ -87,6 +87,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       <div className="shell-main">
+        {!data.runtime && (
+          <div className="demo-gateway row wrap between">
+            <span>Explore freely. Your real workspace stays separate.</span>
+            <div className="row wrap">
+              <a href="/signup?returnToApp=1">Create your workspace</a>
+              <a href="/login?returnToApp=1">Sign in</a>
+              <a href="/?returnToApp=1">Exit Demo</a>
+            </div>
+          </div>
+        )}
         <header className="topbar">
           <div className="row">
             <span className="wordmark">
@@ -102,7 +112,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {active.length} apps connected
             </span>
             <Link href="/settings" className="top-demo">
-              {data.runtime ? "Desktop · Local" : "Phase 1 · Demo"}
+              {data.runtime
+                ? "Desktop · Local"
+                : "Demo Mode · Fictional data · No live actions"}
             </Link>
             <Button
               size="sm"

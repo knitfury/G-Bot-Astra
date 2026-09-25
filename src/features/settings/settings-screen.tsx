@@ -265,7 +265,7 @@ export function SettingsScreen() {
                 description={
                   data.runtime
                     ? "Saved preference. Operating-system notifications are not enabled in this build."
-                    : "Mock preference. No operating-system notifications are sent in Phase 1."
+                    : "Demo Mode does not send operating-system notifications."
                 }
                 checked={data.preferences.notifications}
                 onChange={(v) =>
@@ -275,7 +275,7 @@ export function SettingsScreen() {
               <div className="settings-row">
                 <div>
                   <h3>Language</h3>
-                  <p>English is available in Phase 1.</p>
+                  <p>English is available.</p>
                 </div>
                 <Badge>English</Badge>
               </div>
@@ -311,7 +311,7 @@ export function SettingsScreen() {
                   storage.
                 </p>
                 <Notice>
-                  Phase 2 provider and tool requests may send selected data to
+                  In your real workspace, provider and tool requests send selected data to
                   those services. No real provider, OAuth, or MCP calls are made
                   here.
                 </Notice>
@@ -478,7 +478,7 @@ export function SettingsScreen() {
               <p>Ask once. Work across your business.</p>
               <div className="row">
                 <Badge>Version 0.1.0</Badge>
-                <Badge>Phase 1 · frontend</Badge>
+                <Badge>Demo Mode</Badge>
               </div>
               <div className="divider" />
               <h3>Desktop update simulation</h3>
@@ -489,7 +489,7 @@ export function SettingsScreen() {
                     ? "G-Bot 0.1.1 is available in this simulation."
                     : data.updateStatus === "downloading"
                       ? "Downloading simulated update…"
-                      : "Restart required in the future desktop runtime. No actual update was installed."}
+                      : "Demo update walkthrough complete. No actual update was installed."}
               </p>
               <div className="row">
                 <Button
@@ -519,8 +519,7 @@ export function SettingsScreen() {
                 </Button>
               </div>
               <p className="tiny">
-                Windows and macOS packaging, native secure storage, and actual
-                updates arrive in Phase 2.
+                The installed G-Bot application includes protected local storage and verified updates. Demo Mode never installs an update.
               </p>
             </div>
           )}
@@ -540,7 +539,7 @@ export function SettingsScreen() {
         description={
           confirm === "reset"
             ? "This removes your demo account, providers, apps, history and preferences."
-            : "This change only affects the Phase 1 demo in this browser."
+            : "This change only affects your fictional Demo workspace."
         }
       >
         {confirm === "reset" && (

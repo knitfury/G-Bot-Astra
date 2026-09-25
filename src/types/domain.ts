@@ -249,6 +249,7 @@ export interface Database {
     version: string;
     notice: string;
     updateError?: string;
+    sessionNotice?: string;
   };
   revision: number;
 }

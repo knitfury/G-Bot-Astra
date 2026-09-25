@@ -141,6 +141,15 @@ export class ProductionIdentity {
     await this.changed(null);
   }
   async browser(provider: "google" | "azure") {
+    const label = provider === "google" ? "Google" : "Microsoft";
+    try {
+      this.auth();
+    } catch {
+      throw new DomainError(
+        "CAPABILITY",
+        `${label} sign-in isn't configured for this environment yet. You can explore Demo without an account.`,
+      );
+    }
     this.cancelOAuth?.();
     const state = randomBytes(32).toString("hex");
     let settled = false;
@@ -202,10 +211,21 @@ export class ProductionIdentity {
               ...(provider === "azure" ? { scopes: "email" } : {}),
             },
           });
-          if (r.error || !r.data.url) throw Error();
+          if (r.error || !r.data.url)
+            throw new DomainError(
+              "PROVIDER_AUTH",
+              `${label} sign-in could not start. Try another sign-in method or explore Demo.`,
+            );
           await this.launch(r.data.url);
-        })().catch(() =>
-          finish(Error("Unable to open sign-in. Check your connection.")),
+        })().catch((error) =>
+          finish(
+            error instanceof DomainError
+              ? error
+              : new DomainError(
+                  "PROVIDER_AUTH",
+                  `${label} sign-in could not start. Try again or explore Demo.`,
+                ),
+          ),
         );
       });
     });
@@ -248,6 +268,10 @@ export class ProductionIdentity {
     this.revalidation = this.validate();
     try {
       return await this.revalidation;
+    } catch (error) {
+      this.current = undefined;
+      await this.changed(null);
+      throw error;
     } finally {
       this.revalidation = undefined;
     }

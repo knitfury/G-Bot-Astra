@@ -15,7 +15,9 @@ import {
 import { DomainError } from "../../desktop/runtime/errors";
 import type { Inference } from "../../desktop/adapters/providers";
 import type { MCPRuntime } from "../../desktop/adapters/mcp";
-export async function fixtureRuntime() {
+export async function fixtureRuntime(
+  identity?: import("../../desktop/runtime/identity").ProductionIdentity,
+) {
   const dir = await mkdtemp(join(tmpdir(), "gbot-acceptance-"));
   const vault = new SecretVault(
     new AtomicStore(dir, "secrets", () => ({}), stringMap),
@@ -139,6 +141,7 @@ export async function fixtureRuntime() {
       },
       download: async () => {},
     },
+    identity,
   );
   await runtime.init();
   return {

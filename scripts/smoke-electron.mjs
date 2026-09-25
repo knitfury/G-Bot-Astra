@@ -26,8 +26,31 @@ const app = await launch();
 try {
   const page = await app.firstWindow({ timeout: 60000 });
   await page
-    .getByRole("heading", { name: "Welcome back" })
+    .getByRole("heading", { name: "Meet your new way to work." })
     .waitFor({ timeout: 60000 });
+  await page.getByRole("link", { name: "Sign in", exact: true }).click();
+  await page.getByRole("heading", { name: "Welcome back" }).waitFor();
+  for (const provider of ["Google", "Microsoft"]) {
+    await page.getByRole("button", { name: provider, exact: true }).click();
+    await page
+      .getByText(
+        `${provider} sign-in isn't configured for this environment yet.`,
+        { exact: false },
+      )
+      .waitFor();
+  }
+  await page
+    .getByRole("link", { name: "Back to Welcome", exact: false })
+    .click();
+  await page
+    .getByRole("link", { name: "Create account", exact: false })
+    .click();
+  await page
+    .getByRole("heading", { name: "Create your G-Bot account" })
+    .waitFor();
+  await page
+    .getByRole("link", { name: "Back to Welcome", exact: false })
+    .click();
   const isolation = await page.evaluate(() => ({
     node: typeof window.require,
     bridge: !!window.gbot,
@@ -75,15 +98,13 @@ try {
   );
   if (JSON.parse(workspace).version !== 2)
     throw Error("Workspace not encrypted");
-  const demoWindow = app.waitForEvent("window");
-  await page
-    .getByRole("button", { name: "Explore Demo Mode", exact: true })
-    .click();
-  const demo = await demoWindow;
+  const primaryId = await app.evaluate(
+    ({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id,
+  );
+  await page.getByRole("button", { name: "Explore Demo", exact: true }).click();
+  const demo = page;
   await demo.locator('html[data-app-ready="true"]').waitFor({ timeout: 60000 });
-  await demo
-    .getByRole("button", { name: "Explore the demo", exact: true })
-    .click();
+
   await demo.getByRole("heading", { name: "What can we get done?" }).waitFor();
   if (await demo.evaluate(() => !!window.gbot))
     throw Error("Demo obtained native bridge");
@@ -104,8 +125,24 @@ try {
     "utf8",
   );
   if (unchanged !== workspace) throw Error("Demo modified real workspace");
+  if (await demo.locator(".mobile-pane").isVisible())
+    await demo
+      .getByRole("button", { name: "Close left pane", exact: true })
+      .last()
+      .click();
+  await demo.getByRole("link", { name: "Exit Demo", exact: true }).click();
+  await page
+    .getByRole("heading", { name: "Meet your new way to work." })
+    .waitFor();
+  const windows = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().map((w) => w.id),
+  );
+  if (windows.length !== 1 || windows[0] !== primaryId)
+    throw Error("Navigation created another native window");
+  if (!(await page.evaluate(() => !!window.gbot)))
+    throw Error("Real bridge was not restored after Demo exit");
   console.log(
-    "Native isolation, production entitlement rejection, encrypted storage, separate Demo and business panes passed. Live login is an external acceptance gate.",
+    "Native isolation, production entitlement rejection, encrypted storage, single-window isolated Demo and business panes passed. Live login is an external acceptance gate.",
   );
 } catch (error) {
   await fs.mkdir("test-results-electron", { recursive: true });
@@ -133,7 +170,7 @@ const restarted = await launch();
 try {
   const page = await restarted.firstWindow({ timeout: 60000 });
   await page
-    .getByRole("heading", { name: "Welcome back" })
+    .getByRole("heading", { name: "Meet your new way to work." })
     .waitFor({ timeout: 60000 });
   await page
     .locator('html[data-color="blue"][data-appearance="dark"]')

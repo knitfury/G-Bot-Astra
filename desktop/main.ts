@@ -37,6 +37,7 @@ let window: BrowserWindow | undefined;
 let runtime: Runtime;
 let origin = "";
 let shuttingDown = false;
+let demoMode = process.argv.includes("--demo");
 let diagnostics: Diagnostics;
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on("second-instance", () => {
@@ -204,11 +205,15 @@ async function boot() {
     async (license, user) => {
       if (user) runtime.db.user = user;
       if (license) {
+        if (runtime.db.runtime) runtime.db.runtime.sessionNotice = undefined;
         runtime.db.entitlement = entitlementFor(license.plan);
         runtime.db.entitlement.renewalAt = new Date(
           license.expiresAt,
         ).toISOString();
-      } else runtime.db.entitlement.status = "expired";
+      } else {
+        runtime.db.entitlement.status = "expired";
+        if (!user) runtime.db.user = null;
+      }
       await runtime.save();
     },
   );
@@ -251,6 +256,7 @@ async function boot() {
     identity,
   );
   await runtime.init();
+  await runtime.restoreSession();
   if (runtime.db.preferences.historyRetention)
     await applyRetention(runtime, runtime.db.preferences.historyRetention);
   const prefs = new EncryptedStore<string | null>(
@@ -296,9 +302,7 @@ async function boot() {
       show: false,
       title: "G-Bot",
       webPreferences: {
-        preload: process.argv.includes("--demo")
-          ? undefined
-          : join(__dirname, "preload.cjs"),
+        preload: join(__dirname, "preload.cjs"),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -316,24 +320,59 @@ async function boot() {
       return { action: "deny" };
     });
     window.webContents.on("will-navigate", (event, url) => {
-      if (new URL(url).origin !== origin) event.preventDefault();
+      const target = new URL(url);
+      if (target.origin !== origin) {
+        event.preventDefault();
+        return;
+      }
+      if (
+        demoMode &&
+        target.searchParams.get("returnToApp") === "1" &&
+        ["/", "/login", "/signup"].includes(target.pathname)
+      ) {
+        event.preventDefault();
+        void (async () => {
+          await runtime.restoreSession();
+          demoMode = false;
+          await window?.loadURL(
+            origin + (runtime.db.user ? "/workspace" : target.pathname),
+          );
+        })();
+      }
     });
     window.webContents.on("will-attach-webview", (event) =>
       event.preventDefault(),
     );
     window.once("ready-to-show", () => window?.show());
-    await window.loadURL(origin + (runtime.db.user ? "/workspace" : "/"));
+    await window.loadURL(
+      origin + (demoMode ? "/demo" : runtime.db.user ? "/workspace" : "/"),
+    );
   };
   session.defaultSession.setPermissionRequestHandler(
     (_wc, _permission, callback) => callback(false),
   );
   session.defaultSession.setPermissionCheckHandler(() => false);
+  // Read-only preload handshake. No business data or credentials cross this channel.
+  ipcMain.on("gbot:context", (event) => {
+    event.returnValue =
+      !!window &&
+      !demoMode &&
+      !!event.senderFrame &&
+      trustedSender(
+        event.sender.id,
+        window.webContents.id,
+        event.senderFrame.url,
+        origin,
+        event.senderFrame === event.sender.mainFrame,
+      );
+  });
   ipcMain.handle(
     "gbot:request",
     async (event, operation: unknown, args: unknown) => {
       try {
         if (
           !window ||
+          demoMode ||
           !event.senderFrame ||
           !trustedSender(
             event.sender.id,
@@ -393,28 +432,12 @@ async function boot() {
           preferences = a[0] as string | null;
           await prefs.write(preferences);
         } else if (request.operation === "desktop.openDemo") {
-          const demo = new BrowserWindow({
-            width: 1440,
-            height: 1000,
-            minWidth: 390,
-            minHeight: 600,
-            title: "G-Bot · Demo Mode",
-            webPreferences: {
-              contextIsolation: true,
-              nodeIntegration: false,
-              sandbox: true,
-              partition: "persist:gbot-demo",
-            },
+          runtime.engine.stopAll();
+          demoMode = true;
+          // A full navigation unloads the live renderer and its bridge. The same native window is retained.
+          setImmediate(() => {
+            void window?.loadURL(origin + "/demo");
           });
-          demo.webContents.session.setPermissionRequestHandler(
-            (_wc, _permission, callback) => callback(false),
-          );
-          demo.webContents.session.setPermissionCheckHandler(() => false);
-          demo.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-          demo.webContents.on("will-navigate", (event, url) => {
-            if (new URL(url).origin !== origin) event.preventDefault();
-          });
-          await demo.loadURL(origin);
         } else if (request.operation === "desktop.diagnostics") {
           value = JSON.stringify(
             {
