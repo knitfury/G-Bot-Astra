@@ -1,3 +1,4 @@
+import { isRouter } from "../../src/lib/providers";
 import type { ProviderInput } from "../../src/types/domain";
 import { DomainError } from "../runtime/errors";
 import {
@@ -30,6 +31,7 @@ export interface Turn {
   name?: string;
 }
 export interface ModelResult {
+  model?: string;
   text: string;
   calls: ModelCall[];
 }
@@ -121,7 +123,7 @@ export class HTTPInference implements Inference {
     let url = base,
       body: unknown,
       stream = false;
-    if (p.type.includes("OpenAI")) {
+    if ((p.type.includes("OpenAI") || isRouter(p.type))) {
       url = base + "/chat/completions";
       stream = true;
       if (p.key) headers.Authorization = `Bearer ${p.key}`;
@@ -349,18 +351,19 @@ export class HTTPInference implements Inference {
         stream &&
         response.headers.get("content-type")?.includes("text/event-stream")
       )
-        return p.type.includes("OpenAI")
+        return (p.type.includes("OpenAI") || isRouter(p.type))
           ? await this.stream(response, delta)
           : await this.nativeStream(response, p.type, delta);
       const data = object(await boundedJSON(response));
       let result: ModelResult;
-      if (p.type.includes("OpenAI")) {
+      if ((p.type.includes("OpenAI") || isRouter(p.type))) {
         const message = object(
           (data.choices as { message: unknown }[])?.[0]?.message,
         );
         result = {
           text: typeof message.content === "string" ? message.content : "",
           calls: calls(message.tool_calls),
+          model: typeof data.model === "string" ? data.model : undefined,
         };
       } else if (p.type === "Anthropic-compatible") {
         const blocks = data.content;
@@ -570,6 +573,7 @@ export class HTTPInference implements Inference {
       text = "",
       total = 0,
       complete = false;
+    let model: string | undefined;
     const pending = new Map<
       number,
       { id: string; name: string; arguments: string }
@@ -596,6 +600,7 @@ export class HTTPInference implements Inference {
           continue;
         }
         let event: {
+          model?: string;
           choices?: {
             finish_reason?: string | null;
             delta?: {
@@ -613,6 +618,7 @@ export class HTTPInference implements Inference {
         } catch {
           throw new DomainError("CAPABILITY", "Malformed provider stream.");
         }
+        if (typeof event.model === "string") model = event.model;
         if (event.choices?.[0]?.finish_reason) complete = true;
         const d = event.choices?.[0]?.delta;
         if (d?.content) {
@@ -639,6 +645,7 @@ export class HTTPInference implements Inference {
       );
     const result = {
       text,
+      model,
       calls: calls(
         [...pending.values()].map((c) => ({
           id: c.id,

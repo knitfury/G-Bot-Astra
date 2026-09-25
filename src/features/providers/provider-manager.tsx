@@ -1,4 +1,12 @@
 "use client";
+import Link from "next/link";
+import { routersAvailable } from "@/lib/entitlements";
+import {
+  isRouter,
+  routerModel,
+  providerEndpoint,
+  routerDisclosure,
+} from "@/lib/providers";
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -38,6 +46,8 @@ const types: ProviderType[] = [
   "Gemini-compatible",
   "Custom OpenAI-compatible",
   "Generic REST",
+  "OpenRouter",
+  "OmniRoute",
 ];
 const providerSchema = z.object({
   name: z.string().min(1, "Enter a name."),
@@ -78,6 +88,7 @@ export function ProviderForm({
 }) {
   const action = useAction();
   const desktop = useDesktop();
+  const { data } = useSnapshot();
   const [models, setModels] = useState<string[]>([]);
   const {
     register,
@@ -92,17 +103,17 @@ export function ProviderForm({
       : {
           ...defaults,
           type: initialType || defaults.type,
-          baseUrl:
-            initialType === "Anthropic-compatible"
-              ? "https://api.anthropic.com"
-              : initialType === "Gemini-compatible"
-                ? "https://generativelanguage.googleapis.com"
-                : defaults.baseUrl,
+          baseUrl: providerEndpoint(initialType || defaults.type),
+          model:
+            initialType && isRouter(initialType)
+              ? routerModel(initialType)
+              : defaults.model,
         },
   });
   useEffect(() => {
-    if (desktop && !provider) setValue("model", "");
-  }, [desktop, provider, setValue]);
+    if (desktop && !provider && !isRouter(initialType || defaults.type))
+      setValue("model", "");
+  }, [desktop, provider, setValue, initialType]);
   const type = watch("type");
   async function test(v: ProviderInput) {
     const models = await action.mutateAsync(() => services.providers.test(v));
@@ -136,20 +147,22 @@ export function ProviderForm({
             setValue("type", e.target.value as ProviderType);
             setModels([]);
             const t = e.target.value;
+            setValue("baseUrl", providerEndpoint(t as ProviderType));
             setValue(
-              "baseUrl",
-              t.startsWith("Anthropic")
-                ? "https://api.anthropic.com"
-                : t.startsWith("Gemini")
-                  ? "https://generativelanguage.googleapis.com"
-                  : t === "OpenAI-compatible"
-                    ? "https://api.openai.com/v1"
-                    : "https://inference.example.com/v1",
+              "model",
+              isRouter(t as ProviderType) ? routerModel(t as ProviderType) : "",
             );
           }}
         >
           {types.map((t) => (
-            <option key={t}>{t}</option>
+            <option
+              key={t}
+              disabled={
+                isRouter(t) && (!data || !routersAvailable(data.entitlement))
+              }
+            >
+              {t}
+            </option>
           ))}
         </select>
       </label>
@@ -162,9 +175,12 @@ export function ProviderForm({
           )}
         </label>
         <label className="field">
-          Default model identifier
+          {isRouter(type)
+            ? "Automatic model routing"
+            : "Default model identifier"}
           <input
             {...register("model")}
+            readOnly={isRouter(type)}
             placeholder={
               desktop ? "Your provider’s model identifier" : "demo-model"
             }
@@ -174,10 +190,12 @@ export function ProviderForm({
           )}
         </label>
       </div>
+      {isRouter(type) && <Notice>{routerDisclosure}</Notice>}
       <label className="field">
         {type === "Generic REST" ? "Endpoint URL" : "Base URL"}
         <input
           {...register("baseUrl")}
+          readOnly={type === "OpenRouter"}
           placeholder="https://inference.example.com/v1"
         />
         {errors.baseUrl && (
@@ -250,8 +268,9 @@ export function ProviderForm({
               placeholder='{"X-Workspace":"demo"}'
             />
             <span className="field-help">
-              Test-only. Headers are discarded after testing to avoid persisting
-              credentials.
+              {desktop
+                ? "Custom headers are encrypted locally with your provider credential."
+                : "Demo headers are discarded after testing."}
             </span>
           </label>
           <label className="check-row">
@@ -346,29 +365,48 @@ export function ProviderManager({ embedded = false }: { embedded?: boolean }) {
           </p>
         </>
       )}
-      <div className="provider-options">
-        {types.map((type, i) => (
-          <button
-            key={type}
-            className="provider-option"
-            onClick={() => {
-              setEditing(undefined);
-              setInitialType(type);
-              setOpen(true);
-            }}
-          >
-            <span className="provider-glyph" aria-hidden="true">
-              {["A", "O", "G", "<>", "{}"][i]}
-            </span>
-            <strong>
-              {type
-                .replace("-compatible", "")
-                .replace("Custom OpenAI", "Custom")}
-            </strong>
-            <ArrowRight size={14} />
-          </button>
-        ))}
-      </div>
+      {[
+        { name: "Direct AI Providers", items: types.slice(0, 3) },
+        {
+          name: "LLM Routers & Aggregators — Experimental",
+          items: types.slice(5),
+        },
+        { name: "Advanced", items: types.slice(3, 5) },
+      ].map((group) => (
+        <section className="stack" key={group.name}>
+          <h2>{group.name}</h2>
+          {group.items.some(isRouter) && (
+            <>
+              <p>{routerDisclosure}</p>
+              {!routersAvailable(data.entitlement) && (
+                <Link className="text-link" href="/account">
+                  Locked · Compare plans
+                </Link>
+              )}
+            </>
+          )}
+          <div className="provider-options">
+            {group.items.map((type) => (
+              <button
+                key={type}
+                className="provider-option"
+                disabled={isRouter(type) && !routersAvailable(data.entitlement)}
+                onClick={() => {
+                  setEditing(undefined);
+                  setInitialType(type);
+                  setOpen(true);
+                }}
+              >
+                <span className="provider-glyph" aria-hidden="true">
+                  <Cpu size={22} />
+                </span>
+                <strong>{type.replace("-compatible", "")}</strong>
+                <ArrowRight size={14} />
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
       {data.providers.length === 0 ? (
         <Empty
           title="Your AI connection starts here"
@@ -411,6 +449,9 @@ export function ProviderManager({ embedded = false }: { embedded?: boolean }) {
               <div className="row">
                 <Button
                   size="sm"
+                  disabled={
+                    isRouter(p.type) && !routersAvailable(data.entitlement)
+                  }
                   onClick={() => {
                     setEditing(p);
                     setOpen(true);
@@ -450,7 +491,6 @@ export function ProviderManager({ embedded = false }: { embedded?: boolean }) {
         {data.runtime
           ? "Provider requests leave this device directly for your chosen service."
           : "Demo Mode uses local examples. No AI provider is contacted."}
-        No external inference is performed.
       </div>
       <Dialog
         open={open}

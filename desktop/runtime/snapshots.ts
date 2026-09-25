@@ -10,7 +10,7 @@ import type {
   SnapshotKind,
 } from "../../src/types/snapshot";
 import type { MCPRuntime } from "../adapters/mcp";
-import { slotAvailable } from "../../src/lib/entitlements";
+import { connectionAvailable } from "../../src/lib/entitlements";
 const semantics: [SnapshotKind, RegExp][] = [
   ["mail", /\b(emails?|messages?|inbox)\b/],
   ["inventory", /\b(stock|inventory|products?|items)\b/],
@@ -231,7 +231,7 @@ export class Snapshots {
       !c ||
       !c.enabled ||
       !["connected", "degraded"].includes(c.status) ||
-      !slotAvailable(this.entitlement(), c.slot)
+      !connectionAvailable(this.entitlement(), c)
     )
       return {
         ...base,
@@ -279,7 +279,7 @@ export class Snapshots {
             !current ||
             !current.enabled ||
             current.status !== "connected" ||
-            !slotAvailable(this.entitlement(), current.slot) ||
+            !connectionAvailable(this.entitlement(), current) ||
             !currentTool?.enabled ||
             currentTool.schemaHash !== t.schemaHash ||
             !snapshotRead(current, currentTool)
@@ -302,7 +302,7 @@ export class Snapshots {
             afterTool.schemaHash !== t.schemaHash ||
             afterTool.risk !== "read" ||
             afterTool.requiresApproval ||
-            !slotAvailable(this.entitlement(), after.slot)
+            !connectionAvailable(this.entitlement(), after)
           )
             throw Error();
           const items = snapshotItems(raw, map!.kind);

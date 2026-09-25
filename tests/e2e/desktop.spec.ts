@@ -80,11 +80,7 @@ test("desktop contracts: configure, discover, autonomous reads, approvals, recov
     await expect(dialog).not.toBeVisible();
     for (const [slot, name] of ["Email", "Inventory"].entries()) {
       await page.goto("/connections");
-      await page
-        .locator(".connection-card")
-        .nth(slot)
-        .getByRole("button", { name: "Connect app", exact: true })
-        .click();
+      await page.getByRole("button", {name:"Add Connection", exact:true}).click();
       await page.getByLabel("Connection name").fill(name);
       await page
         .getByLabel("MCP server URL")

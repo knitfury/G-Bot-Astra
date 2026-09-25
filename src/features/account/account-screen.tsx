@@ -1,5 +1,7 @@
 "use client";
-import {desktopCall} from "@/services/desktop/client";
+import { PlanComparison } from "@/components/common/plan-comparison";
+import { PLANS } from "@/production/model";
+import { desktopCall } from "@/services/desktop/client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, SignOut, ShieldCheck } from "@phosphor-icons/react";
@@ -27,7 +29,63 @@ export function AccountScreen() {
     [logout, setLogout] = useState(false);
   const select = useWorkspace((s) => s.setConversation);
   if (!data) return <Loading />;
-  if(data.runtime?.production)return <div className="page"><PageHeading eyebrow="YOUR ACCOUNT" title="Account & plan" description="Manage your subscription, devices and security."/><div className="panel stack"><h2>{data.user?.name||"Your account"}</h2><p>{data.user?.email}</p><Badge>{data.entitlement.plan} · {data.entitlement.status}</Badge><p>{data.entitlement.maxActiveConnections} active connections. Saved connections are retained when your plan changes.</p><p>Billing and security open in your browser. Card details never enter G-Bot.</p><Button onClick={()=>void action.mutateAsync(()=>desktopCall("desktop.openAccount")).catch(()=>{})}>Manage account & billing</Button><Button onClick={()=>void action.mutateAsync(()=>desktopCall("desktop.refreshLicense")).catch(()=>{})}>Refresh device access</Button><Button onClick={()=>void action.mutateAsync(async()=>{await services.auth.logout();router.push('/');}).catch(()=>{})}>Sign out</Button>{action.error&&<ErrorState message={action.error.message}/>}</div></div>;
+  if (data.runtime?.production)
+    return (
+      <div className="page">
+        <PageHeading
+          eyebrow="YOUR ACCOUNT"
+          title="Account & plan"
+          description="Manage your subscription, devices and security."
+        />
+        <div className="panel stack">
+          <h2>{data.user?.name || "Your account"}</h2>
+          <p>{data.user?.email}</p>
+          <Badge>
+            {data.entitlement.plan} · {data.entitlement.status}
+          </Badge>
+          <p>
+            {data.entitlement.maxActiveConnections} active connections. Saved
+            connections are retained when your plan changes.
+          </p>
+          <p>
+            Billing and security open in your browser. Card details never enter
+            G-Bot.
+          </p>
+          <Button
+            onClick={() =>
+              void action
+                .mutateAsync(() => desktopCall("desktop.openAccount"))
+                .catch(() => {})
+            }
+          >
+            Manage account & billing
+          </Button>
+          <Button
+            onClick={() =>
+              void action
+                .mutateAsync(() => desktopCall("desktop.refreshLicense"))
+                .catch(() => {})
+            }
+          >
+            Refresh device access
+          </Button>
+          <Button
+            onClick={() =>
+              void action
+                .mutateAsync(async () => {
+                  await services.auth.logout();
+                  router.push("/");
+                })
+                .catch(() => {})
+            }
+          >
+            Sign out
+          </Button>
+          {action.error && <ErrorState message={action.error.message} />}
+        </div>
+        <PlanComparison />
+      </div>
+    );
   return (
     <div className="page">
       <PageHeading
@@ -106,6 +164,8 @@ export function AccountScreen() {
           >
             <span className="eyebrow">{p}</span>
             <strong>
+              ${PLANS[p].monthly}
+              <small>USD / month · ${PLANS[p].annual} / year</small>
               {PLAN_LIMITS[p]}
               <small>active connection{p === "free" ? "" : "s"}</small>
             </strong>
@@ -119,11 +179,11 @@ export function AccountScreen() {
             <ul className="plan-features">
               <li>
                 <Check size={14} />
-                All AI provider types
+                BYOK direct AI
               </li>
               <li>
                 <Check size={14} />
-                Eight visible app slots
+                Dynamic saved connections
               </li>
               <li>
                 <Check size={14} />
@@ -147,9 +207,10 @@ export function AccountScreen() {
           </div>
         ))}
       </div>
+      <PlanComparison />
       <Notice>
-        Downgrading keeps every saved connection. Slots above your new allowance
-        are paused until access is restored.
+        Downgrading keeps every saved connection. Excess active connections
+        become inactive. Reconnect them when capacity is available.
       </Notice>
       <div className="settings-row">
         <div>
@@ -173,7 +234,7 @@ export function AccountScreen() {
       >
         <p className="confirm-text">
           {plan && PLAN_LIMITS[plan] < data.entitlement.maxActiveConnections
-            ? `Connections beyond slot ${PLAN_LIMITS[plan]} will become unavailable. Their configuration will remain saved.`
+            ? `Excess active connections will become inactive. Their configuration and permissions will remain saved.`
             : `Your workspace will allow ${plan ? PLAN_LIMITS[plan] : 0} active connections.`}
         </p>
         <div className="form-actions">

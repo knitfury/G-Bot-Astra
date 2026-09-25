@@ -222,7 +222,7 @@ test("duplicate tool calls stop safely and plan downgrade retains configurations
   assert.equal(f.runtime.db.connections.length, 3);
   await assert.rejects(
     () => f.s.connections.connect(f.runtime.db.connections[1].id, true),
-    /locked/,
+    /allowance is full/,
   );
   await f.s.entitlements.change("starter");
   assert.equal(f.runtime.db.entitlement.maxActiveConnections, 5);

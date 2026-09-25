@@ -22,8 +22,8 @@ import { useAction, useSnapshot } from "@/hooks/use-services";
 import { useDesktop } from "@/hooks/use-desktop";
 import { services } from "@/services";
 import {
-  requiredPlan,
-  slotAvailable,
+  canActivate,
+  activeConnectionCount,
   connectionAvailable,
 } from "@/lib/entitlements";
 import type { MCPConnection, Category } from "@/types/domain";
@@ -304,17 +304,18 @@ export function ConnectionManager({
 }) {
   const { data } = useSnapshot();
   const [slot, setSlot] = useState<number>();
+  const [source, setSource] = useState("Custom MCP");
   if (!data) return <Loading />;
-  const active = data.connections.filter((c) =>
-    connectionAvailable(data.entitlement, c),
-  ).length;
+  const active = activeConnectionCount(data.connections);
+  const add = () =>
+    setSlot(Math.max(-1, ...data.connections.map((c) => c.slot)) + 1);
   return (
     <div className={embedded ? "stack" : "page"}>
       {!embedded ? (
         <PageHeading
           eyebrow="WORK BETTER, TOGETHER"
-          title="Connected apps"
-          description="Bring your business into the conversation. Choose any compatible app for each of your eight connection slots."
+          title="Your Connections"
+          description="Connect the business tools you want G-Bot to work with."
         >
           <Badge tone="accent">
             {active} / {data.entitlement.maxActiveConnections} active
@@ -329,12 +330,17 @@ export function ConnectionManager({
           </p>
         </>
       )}
+      <Button variant="default" onClick={add}>
+        <Plus size={16} />
+        Add Connection
+      </Button>
       <div className="connection-summary">
         <div className="row">
           <Plugs size={20} />
           <span>
             <strong className="capitalize">{data.entitlement.plan}</strong> plan
-            · {data.entitlement.maxActiveConnections} active connection
+            · {active} of {data.entitlement.maxActiveConnections} active
+            connection
             {data.entitlement.maxActiveConnections === 1 ? "" : "s"}
           </span>
         </div>
@@ -342,85 +348,35 @@ export function ConnectionManager({
           Compare plans <ArrowUpRight size={12} />
         </Link>
       </div>
-      {data.runtime?.production && <CatalogBrowser />}
+
+      {!data.connections.length && (
+        <Empty
+          title="Your Connections"
+          description="Connect the business tools you want G-Bot to work with."
+        />
+      )}
       <div className="connection-grid">
-        {Array.from({ length: 8 }, (_, i) => {
-          const c = data.connections.find((c) => c.slot === i),
-            available = slotAvailable(data.entitlement, i);
-          return (
-            <article
-              className={`connection-card ${!available ? "locked" : ""}`}
-              key={i}
-            >
-              <div className="row between">
-                {c ? <AppIcon category={c.category} /> : <Plugs size={24} />}
-                <span className="eyebrow">
-                  SLOT {String(i + 1).padStart(2, "0")}
-                </span>
-              </div>
-              <h3>{c?.name || "Add Connection"}</h3>
-              <p>
-                {c?.category ||
-                  "Connect a compatible business app or remote MCP server."}
-              </p>
-              {!available ? (
-                <>
-                  <Badge tone="warning">
-                    <Lock size={11} />
-                    {data.entitlement.status === "expired"
-                      ? "Plan expired"
-                      : `${requiredPlan(i)} plan`}
-                  </Badge>
-                  <p className="slot-detail">
-                    {c
-                      ? "Configuration saved. Access is paused by your plan."
-                      : "Available when your workspace needs more."}
-                  </p>
-                  <div className="row">
-                    <Button size="sm" asChild>
-                      <Link href="/account">
-                        View plans
-                        <ArrowUpRight size={13} />
-                      </Link>
-                    </Button>
-                    {c && (
-                      <Link
-                        className="text-link tiny"
-                        href={`/connections/${c.id}`}
-                      >
-                        Inspect
-                      </Link>
-                    )}
-                  </div>
-                </>
-              ) : c ? (
-                <>
-                  <StatusBadge status={c.status} />
-                  <p className="slot-detail">
-                    {c.tools.length} tools · {c.auth} authentication
-                  </p>
-                  <Button asChild size="sm">
-                    <Link href={`/connections/${c.id}`}>
-                      Manage connection
-                      <ArrowUpRight size={13} />
-                    </Link>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Badge>Available</Badge>
-                  <p className="slot-detail">
-                    Email, CRM, inventory — make it yours.
-                  </p>
-                  <Button size="sm" onClick={() => setSlot(i)}>
-                    <Plus size={14} />
-                    Connect app
-                  </Button>
-                </>
-              )}
-            </article>
-          );
-        })}
+        {data.connections.map((c) => (
+          <article className="connection-card" key={c.id}>
+            <div className="row between">
+              <AppIcon category={c.category} />
+              <StatusBadge status={c.status} />
+            </div>
+            <h3>{c.name}</h3>
+            <p>{c.category}</p>
+            <p className="slot-detail">
+              {c.tools.filter((t) => t.enabled).length} authorized /{" "}
+              {c.tools.length} discovered tools · {c.auth}
+            </p>
+            {c.error && <p role="status">{c.error}</p>}
+            <Button asChild size="sm">
+              <Link href={`/connections/${c.id}`}>
+                Manage connection
+                <ArrowUpRight size={13} />
+              </Link>
+            </Button>
+          </article>
+        ))}
       </div>
       <div className="connection-foot">
         <ShieldCheck size={18} />
@@ -433,10 +389,37 @@ export function ConnectionManager({
         open={slot !== undefined}
         onOpenChange={() => setSlot(undefined)}
         title="Connect a business app"
-        description={`Set up connection slot ${(slot ?? 0) + 1}. ${data.runtime ? "Connect directly to your MCP server." : "All connection requests are simulated."}`}
+        description={
+          data.runtime
+            ? "Custom MCP · Connect directly to your MCP server."
+            : "Custom MCP · All connection requests are simulated."
+        }
       >
-        {slot !== undefined && (
-          <ConnectionForm slot={slot} onDone={() => setSlot(undefined)} />
+        <div className="tabs" role="tablist" aria-label="Connection source">
+          {["G-Bot Recommended", "Custom MCP"].map((name) => (
+            <button
+              key={name}
+              role="tab"
+              aria-selected={source === name}
+              onClick={() => setSource(name)}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+        {source === "G-Bot Recommended" ? (
+          data.runtime?.production ? (
+            <CatalogBrowser />
+          ) : (
+            <Notice>
+              No Recommended integrations have completed live acceptance in Demo
+              Mode. Use Custom MCP to explore a simulated connection.
+            </Notice>
+          )
+        ) : (
+          slot !== undefined && (
+            <ConnectionForm slot={slot} onDone={() => setSlot(undefined)} />
+          )
         )}
       </Dialog>
     </div>
@@ -460,7 +443,7 @@ export function ConnectionDetail({ id }: { id: string }) {
         action="Back to connected apps"
       />
     );
-  const available = slotAvailable(data.entitlement, c.slot);
+  const available = canActivate(data.entitlement, data.connections, c.id);
   return (
     <div className="page">
       <Link className="row text-link tiny" href="/connections">
@@ -470,7 +453,7 @@ export function ConnectionDetail({ id }: { id: string }) {
       <PageHeading
         eyebrow="CONNECTION DETAILS"
         title={c.name}
-        description={`${c.category} · Slot ${c.slot + 1} · ${c.tools.length} discovered tools`}
+        description={`${c.category} · ${c.tools.length} discovered tools`}
       >
         <div className="row">
           <AppIcon category={c.category} />
@@ -522,12 +505,10 @@ export function ConnectionDetail({ id }: { id: string }) {
               </div>
             </div>
             {!available && (
-              <ErrorState message="Your saved configuration is retained, but this slot is unavailable on your plan." />
+              <ErrorState message="Your saved configuration is retained. Disconnect another active connection or compare plans to reconnect." />
             )}
             <div className="row wrap">
-              <Button disabled={!available} onClick={() => setEdit(true)}>
-                Edit connection
-              </Button>
+              <Button onClick={() => setEdit(true)}>Edit connection</Button>
               {c.status === "connected" ? (
                 <Button
                   disabled={action.isPending}

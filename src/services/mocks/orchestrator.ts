@@ -1,3 +1,4 @@
+import { validateRouter } from "@/lib/providers";
 import type {
   ApprovalRequest,
   Attachment,
@@ -58,6 +59,7 @@ function availableModel(model: string) {
     throw new Error(
       "The selected AI model is unavailable. Test or reconnect the provider, then retry.",
     );
+  validateRouter({...provider, key:""}, get().entitlement);
   return provider;
 }
 const ensureLive = (signal: AbortSignal) => {

@@ -2410,3 +2410,8 @@
   .demo-gateway { padding: 8px 14px; gap: 8px; }
   .top-demo { white-space: normal; max-width: 140px; font-size: 10px; }
 }
+
+.plan-comparison { overflow-x: auto; }
+.plan-comparison table { width: 100%; border-collapse: collapse; min-width: 620px; }
+.plan-comparison th, .plan-comparison td { padding: 12px; border-bottom: 1px solid var(--line); text-align: left; }
+.connection-card h3, .activity-detail, .provider-card h3 { overflow-wrap: anywhere; }

@@ -46,7 +46,7 @@ for (const [legacy, color, appearance] of [
     );
   });
 
-for (const color of ["orange", "purple", "blue", "green"])
+for (const color of ["orange", "purple", "blue", "green", "neutral"])
   test(`${color} dark covers workflows and supporting surfaces`, async ({
     page,
   }, info) => {

@@ -1,3 +1,4 @@
+import { isRouter, validateRouter } from "@/lib/providers";
 import type { Services } from "@/services/contracts";
 import type {
   AIProviderConnection,
@@ -10,7 +11,7 @@ import {
   demoProvider,
   toolsFor,
 } from "@/data/mocks/seed";
-import { entitlementFor, slotAvailable } from "@/lib/entitlements";
+import { entitlementFor, canActivate, reconcileConnections } from "@/lib/entitlements";
 import { stamp, uid } from "@/lib/utils";
 import {
   delay,
@@ -150,6 +151,7 @@ export const mockServices: Services = {
     async change(plan) {
       await delay();
       get().entitlement = entitlementFor(plan);
+      reconcileConnections(get().entitlement, get().connections);
       persist();
     },
     async expire(expired) {
@@ -165,8 +167,9 @@ export const mockServices: Services = {
     async test(input) {
       await online();
       await delay(450);
+      validateRouter(input, get().entitlement);
       validateProvider(input);
-      return [input.model, `${input.model}-fast`];
+      return (isRouter(input.type) ? [input.model] : [input.model, `${input.model}-fast`]);
     },
     async save(input, id) {
       await mockServices.providers.test(input);
@@ -184,7 +187,7 @@ export const mockServices: Services = {
         createdAt: existing?.createdAt || stamp(),
         updatedAt: stamp(),
         lastTest: stamp(),
-        models: [input.model, `${input.model}-fast`].map((m, i) => ({
+        models: (isRouter(input.type) ? [input.model] : [input.model, `${input.model}-fast`]).map((m, i) => ({
           id: `${providerId}-${i}`,
           providerId,
           identifier: m,
@@ -226,13 +229,9 @@ export const mockServices: Services = {
     },
     async save(input, id) {
       await online();
-      if (!slotAvailable(get().entitlement, input.slot))
-        throw new Error("This slot is unavailable on your current plan.");
       if (!input.name.trim() || !/^https?:\/\//.test(input.url))
         throw new Error("Enter a connection name and valid HTTP(S) MCP URL.");
       const existing = get().connections.find((c) => c.id === id);
-      if (!id && get().connections.some((c) => c.slot === input.slot))
-        throw new Error("This slot is already configured.");
       const connectionId = id || uid();
       get().connections = [
         ...get().connections.filter((c) => c.id !== id),
@@ -256,8 +255,9 @@ export const mockServices: Services = {
     async connect(id, consent) {
       const c = findConnection(id);
       if (!consent) throw new Error("Permission approval is required.");
-      if (!slotAvailable(get().entitlement, c.slot))
+      if (!canActivate(get().entitlement, get().connections, id))
         throw new Error("Your plan does not allow this connection.");
+      c.enabled = true;
       c.status = "connecting";
       c.error = "";
       persist();

@@ -1,3 +1,5 @@
+import { connectionAvailable } from "../src/lib/entitlements";
+import { validateRouter } from "../src/lib/providers";
 import {
   app,
   BrowserWindow,
@@ -232,6 +234,7 @@ async function boot() {
     disconnect: (id: string) => mcp.disconnect(id),
     call: async (...args: Parameters<typeof mcp.call>) => {
       await identity.ensure();
+      if (!connectionAvailable(runtime.db.entitlement, args[0]) || !args[1].enabled) throw new Error("Connection or tool permission is no longer active.");
       await catalog.assertAllowed(args[0].url);
       return mcp.call(...args);
     },
@@ -248,6 +251,7 @@ async function boot() {
     {
       generate: async (...args: Parameters<typeof inference.generate>) => {
         await identity.ensure();
+        validateRouter(args[0], runtime.db.entitlement);
         return inference.generate(...args);
       },
     },
@@ -394,13 +398,15 @@ async function boot() {
           value = await runtime.services.snapshot();
         else if (request.operation === "desktop.catalog")
           value = await catalog.get();
-        else if (request.operation === "desktop.data")
+        else if (request.operation === "desktop.data") {
+          if (["audit", "audit-retention"].includes(a[0] as string)) await identity.ensure();
           value = await nativeData(
             runtime,
             directory,
             a[0] as string,
             a[1] as string,
           );
+        }
         else if (request.operation === "desktop.removeAttachment")
           value = runtime.attachments.remove(a[0] as string);
         else if (request.operation === "desktop.retention")

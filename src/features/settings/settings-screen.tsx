@@ -286,7 +286,7 @@ export function SettingsScreen() {
               <p>
                 {tab === "AI providers"
                   ? "Manage multiple providers, test connections, and choose your models."
-                  : "Manage eight connection slots, inspect tools, and review permissions."}
+                  : "Manage saved connections, inspect tools, and review permissions."}
               </p>
               <Button asChild>
                 <Link

@@ -24,14 +24,15 @@ const provider: ProviderInput = {
 };
 test("entitlement rules are centralized and downgrade retains all saved configuration", async () => {
   await services.auth.demo();
-  const original = JSON.stringify(get().connections);
+  const configurations = () => get().connections.map(({enabled, status, ...c}) => c);
+  const original = JSON.stringify(configurations());
   await services.entitlements.change("starter");
   assert.equal(
     get().connections.filter((c) => connectionAvailable(get().entitlement, c))
       .length,
     5,
   );
-  assert.equal(JSON.stringify(get().connections), original);
+  assert.equal(JSON.stringify(configurations()), original);
   await services.entitlements.change("free");
   assert.equal(
     get().connections.filter((c) => connectionAvailable(get().entitlement, c))
@@ -99,6 +100,7 @@ test("support action requires approval and rechecks entitlement and tool permiss
   await assert.rejects(() => services.approvals.resolve(a.id, true), /plan/);
   assert.equal(a.status, "pending");
   await services.entitlements.change("business");
+  await services.connections.connect(a.connectionId, true);
   await services.tools.toggle(a.connectionId, a.toolId, false);
   await assert.rejects(
     () => services.approvals.resolve(a.id, true),

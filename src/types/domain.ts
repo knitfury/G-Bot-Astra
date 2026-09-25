@@ -3,6 +3,7 @@ export type ThemeColor = "orange" | "purple" | "blue" | "green" | "neutral";
 export type Appearance = "light" | "dark";
 export type Status =
   | "connected"
+  | "inactive"
   | "disconnected"
   | "connecting"
   | "needs authentication"
@@ -36,7 +37,9 @@ export type ProviderType =
   | "OpenAI-compatible"
   | "Gemini-compatible"
   | "Custom OpenAI-compatible"
-  | "Generic REST";
+  | "Generic REST"
+  | "OpenRouter"
+  | "OmniRoute";
 export interface User {
   id: string;
   name: string;
@@ -163,6 +166,12 @@ export interface ApprovalRequest {
   resolvedAt?: string;
 }
 export interface Message {
+  providerName?: string;
+  requestedModel?: string;
+  routedModels?: string[];
+  automaticRouting?: boolean;
+  retryCount?: number;
+  endedAt?: string;
   id: string;
   role: "user" | "assistant";
   content: string;
@@ -184,6 +193,11 @@ export interface Conversation {
   scenario?: "inventory" | "support" | "summary";
 }
 export interface ActivityEvent {
+  messageId?: string;
+  provider?: string;
+  model?: string;
+  durationMs?: number;
+  retryCount?: number;
   id: string;
   timestamp: string;
   actor: string;
@@ -216,6 +230,7 @@ export interface Diagnostics {
   authFailure: "none" | "credentials" | "network";
 }
 export interface Preferences {
+  activityRetention?: 0 | 30 | 90 | 180;
   historyRetention?: 0 | 30 | 90 | 180;
   diagnosticsConsent?: boolean;
   onboardingStep?: number;

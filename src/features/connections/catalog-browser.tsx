@@ -85,14 +85,14 @@ export function CatalogBrowser() {
                 Setup documentation
               </a>
               <p className="tiny">
-                Add this endpoint to any available connection slot below.
+                Use Add Connection → Custom MCP with this endpoint.
                 Discovery and permissions are still required.
               </p>
             </article>
           ))
       )}
       <p className="tiny muted">
-        Custom · Connect any compatible remote MCP server in an available slot.
+        Custom MCP · Connect any compatible remote MCP server.
         You control its tools and permissions.
       </p>
     </section>
