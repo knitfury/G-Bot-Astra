@@ -179,7 +179,7 @@ export function ActivityScreen() {
       <div className="activity-filters">
         <label className="field">
           Application
-          <select value={app} onChange={(e) => setApp(e.target.value)}>
+          <select aria-label="Application" value={app} onChange={(e) => setApp(e.target.value)}>
             <option value="">All applications</option>
             {data.connections.map((c) => (
               <option key={c.id} value={c.id}>
