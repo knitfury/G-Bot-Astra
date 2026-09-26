@@ -1,3 +1,4 @@
+import { PlanComparison } from "@/components/common/plan-comparison";
 import Link from "next/link";
 import { Logo, Badge } from "@/components/common/ui";
 import { Button } from "@/components/ui/button";
@@ -121,6 +122,7 @@ export default function Product() {
           Connection setup & compatibility
         </Link>
       </section>
+      <PlanComparison />
       <section id="pricing" className="public-section">
         <h2>Start small. Connect more when you need to.</h2>
         <div className="plan-grid">
@@ -128,12 +130,12 @@ export default function Product() {
             <article className="panel stack" key={id}>
               <span className="eyebrow">{p.name}</span>
               <h3>
-                €{p.monthly}
+                ${p.monthly}
                 <small> / month</small>
               </h3>
               <p>
                 {p.annual
-                  ? `Or €${p.annual}/year · 12 months for the price of 10`
+                  ? `Or $${p.annual}/year · USD annual billing`
                   : "No card. No subscription required."}
               </p>
               <p>
@@ -151,7 +153,7 @@ export default function Product() {
           ))}
         </div>
         <p className="tiny muted">
-          Single-user plans. EUR pricing; applicable taxes are shown at
+          Single-user plans. USD pricing; applicable taxes are shown at
           checkout. Final consumer tax-inclusive pricing and legal terms require
           pre-launch review.
         </p>

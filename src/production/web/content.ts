@@ -55,7 +55,7 @@ export const pages: Record<
   subscriptions: {
     title: "Subscription & Cancellation — draft",
     intro:
-      "Free: €0. Starter: €14/month or €140/year. Business: €29/month or €290/year. All plans are single-user BYOK.",
+      "Free: $0. Starter: $6/month or $60/year. Business: $9/month or $90/year. All plans are single-user BYOK.",
     sections: [
       [
         "Access",
@@ -71,7 +71,7 @@ export const pages: Record<
       ],
       [
         "Review",
-        "EUR is primary. Consumer tax-inclusive presentation, automatic tax, renewal notices, statutory withdrawal and local accounting treatment require legal/tax review before launch.",
+        "USD is primary. Consumer tax-inclusive presentation, automatic tax, renewal notices, statutory withdrawal and local accounting treatment require legal/tax review before launch.",
       ],
     ],
   },

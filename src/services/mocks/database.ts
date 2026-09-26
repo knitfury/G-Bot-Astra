@@ -1,3 +1,4 @@
+import { reconcileConnections } from "@/lib/entitlements";
 import type { Database } from "@/types/domain";
 import { initialDatabase } from "@/data/mocks/seed";
 let db: Database = initialDatabase();
@@ -5,6 +6,7 @@ const listeners = new Set<() => void>();
 let hydrated = false;
 export const get = () => db;
 export function persist() {
+  reconcileConnections(db.entitlement, db.connections);
   db = { ...db, revision: db.revision + 1 };
   if (typeof window !== "undefined") {
     try {

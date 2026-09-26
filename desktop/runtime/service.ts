@@ -1,3 +1,5 @@
+import { retainActivity } from "../../src/lib/audit";
+import { validateRouter } from "../../src/lib/providers";
 import type { ProductionIdentity } from "./identity";
 import { Snapshots } from "./snapshots";
 import { randomUUID } from "node:crypto";
@@ -8,7 +10,7 @@ import type {
   MCPConnection,
 } from "../../src/types/domain";
 import { initialDatabase } from "../../src/data/mocks/seed";
-import { entitlementFor, slotAvailable } from "../../src/lib/entitlements";
+import { entitlementFor, canActivate, reconcileConnections } from "../../src/lib/entitlements";
 import { AtomicStore, SecretVault } from "./storage";
 import { DomainError, safeError } from "./errors";
 import { remoteURL, parseHeaders } from "./security";
@@ -128,7 +130,7 @@ export function databaseShape(value: unknown): value is Database {
         obj(c) &&
         Number.isInteger(c.slot) &&
         Number(c.slot) >= 0 &&
-        Number(c.slot) < 8 &&
+        Number.isSafeInteger(c.slot) &&
         typeof c.enabled === "boolean" &&
         array(c.tools, tool),
     ) &&
@@ -377,20 +379,6 @@ export class Runtime {
         list: async () => this.db.connections,
         save: async (input, id) => {
           remoteURL(input.url);
-          if (!slotAvailable(this.db.entitlement, input.slot))
-            throw new DomainError(
-              "ENTITLEMENT",
-              "This connection slot requires a different plan.",
-            );
-          if (
-            this.db.connections.some(
-              (c) => c.slot === input.slot && c.id !== id,
-            )
-          )
-            throw new DomainError(
-              "INVALID_ARGUMENTS",
-              "This slot is already configured.",
-            );
           const cid = id ?? randomUUID(),
             prior = this.db.connections.find((c) => c.id === cid);
           if (prior) await mcp.disconnect(cid);
@@ -462,21 +450,27 @@ export class Runtime {
               "INVALID_ARGUMENTS",
               "Consent is required to discover tools.",
             );
-          if (!slotAvailable(this.db.entitlement, c.slot))
+          if (!canActivate(this.db.entitlement, this.db.connections, id))
             throw new DomainError(
               "ENTITLEMENT",
-              "This slot is locked by your current plan.",
+              "Your active connection allowance is full. Disconnect another connection or compare plans.",
             );
           if (["connecting", "authenticating"].includes(c.status))
             throw new DomainError(
               "MCP_PROTOCOL",
               "Connection is already in progress.",
             );
+          c.enabled = true; // Reserve capacity before any asynchronous work.
           c.status = "connecting";
           c.error = "";
           await this.save();
           try {
-            c.tools = await mcp.connect(c);
+            const tools = await mcp.connect(c);
+            if (!c.enabled || !canActivate(this.db.entitlement, this.db.connections, id)) {
+              await mcp.disconnect(id);
+              throw new DomainError("ENTITLEMENT", "Connection activation was cancelled or the plan changed.");
+            }
+            c.tools = tools;
             c.status = "connected";
             c.enabled = true;
             c.lastConnected = stamp();
@@ -499,17 +493,16 @@ export class Runtime {
         },
         disconnect: async (id) => {
           const c = find(id);
+          c.enabled = false;
           await mcp.disconnect(id);
-          for (const suffix of ["manual", "oauth-tokens", "oauth-client"])
-            await vault.delete(`${id}:${suffix}`);
           c.status = "disconnected";
           c.enabled = false;
-          c.maskedCredential = "Credential removed";
-          this.event(id, "MCP disconnected; credentials removed", "completed");
+          this.event(id, "MCP disconnected; configuration retained", "completed");
           await this.save();
         },
         remove: async (id) => {
           await this.services.connections.disconnect(id);
+          for (const suffix of ["manual", "oauth-tokens", "oauth-client"]) await vault.delete(`${id}:${suffix}`);
           this.db.connections = this.db.connections.filter((c) => c.id !== id);
           await this.save();
         },
@@ -695,6 +688,10 @@ export class Runtime {
     for (const listener of this.listeners) listener();
   }
   async save() {
+    const paused = reconcileConnections(this.db.entitlement, this.db.connections);
+    for (const id of paused) await this.mcp.disconnect(id);
+    if (paused.length) this.snapshots.clear();
+    retainActivity(this.db);
     this.db.revision++;
     await this.store.write(this.db);
     this.notify();
@@ -743,9 +740,11 @@ export class Runtime {
         "PROVIDER_AUTH",
         "Select and test an AI provider first.",
       );
+    validateRouter({ ...p, key: "" }, this.db.entitlement);
     return this.withCredential({ ...p, key: "" }, p.id);
   }
   private async testProvider(input: ProviderInput) {
+    validateRouter(input, this.db.entitlement);
     remoteURL(input.baseUrl);
     parseHeaders(input.headers);
     if (input.auth !== "None" && !input.key)

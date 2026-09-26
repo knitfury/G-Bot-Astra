@@ -39,3 +39,24 @@ test("invalid or missing theme data falls back safely", () => {
     appearance: "light",
   });
 });
+
+test("dark canvases share neutral semantic surfaces while retaining distinct accents", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync("src/styles/globals.css", "utf8");
+  const foundation = css.match(/\[data-appearance="dark"\] \{([^}]+)\}/)![1];
+  for (const key of ["bg", "surface", "surface-alt", "soft", "line"]) {
+    const value = foundation.match(new RegExp(`--${key}: #([a-f0-9]{6})`))![1];
+    assert.equal(value.slice(0, 2), value.slice(2, 4));
+    assert.equal(value.slice(2, 4), value.slice(4, 6));
+  }
+  for (const color of themeColors) {
+    const body = css.match(
+      new RegExp(
+        `\\[data-color="${color}"\\]\\[data-appearance="dark"\\] \\{([^}]+)\\}`,
+      ),
+    )![1];
+    assert.doesNotMatch(body, /--(?:bg|surface|surface-alt|soft|line):/);
+  }
+  assert.match(css, /--accent: #c7b0f4/);
+  assert.match(css, /--accent: #f0a17b/);
+});

@@ -5,7 +5,6 @@ import { get } from "../src/services/mocks/database";
 import {
   connectionAvailable,
   PLAN_LIMITS,
-  requiredPlan,
 } from "../src/lib/entitlements";
 import type { ProviderInput } from "../src/types/domain";
 const provider: ProviderInput = {
@@ -24,14 +23,15 @@ const provider: ProviderInput = {
 };
 test("entitlement rules are centralized and downgrade retains all saved configuration", async () => {
   await services.auth.demo();
-  const original = JSON.stringify(get().connections);
+  const configurations = () => get().connections.map(({enabled, status, ...c}) => c);
+  const original = JSON.stringify(configurations());
   await services.entitlements.change("starter");
   assert.equal(
     get().connections.filter((c) => connectionAvailable(get().entitlement, c))
       .length,
     5,
   );
-  assert.equal(JSON.stringify(get().connections), original);
+  assert.equal(JSON.stringify(configurations()), original);
   await services.entitlements.change("free");
   assert.equal(
     get().connections.filter((c) => connectionAvailable(get().entitlement, c))
@@ -39,9 +39,6 @@ test("entitlement rules are centralized and downgrade retains all saved configur
     1,
   );
   assert.equal(get().connections.length, 8);
-  assert.equal(requiredPlan(0), "free");
-  assert.equal(requiredPlan(4), "starter");
-  assert.equal(requiredPlan(7), "business");
   assert.deepEqual(PLAN_LIMITS, { free: 1, starter: 5, business: 8 });
 });
 test("provider credentials and advanced headers never survive save", async () => {
@@ -99,6 +96,7 @@ test("support action requires approval and rechecks entitlement and tool permiss
   await assert.rejects(() => services.approvals.resolve(a.id, true), /plan/);
   assert.equal(a.status, "pending");
   await services.entitlements.change("business");
+  await services.connections.connect(a.connectionId, true);
   await services.tools.toggle(a.connectionId, a.toolId, false);
   await assert.rejects(
     () => services.approvals.resolve(a.id, true),
