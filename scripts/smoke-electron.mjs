@@ -31,6 +31,12 @@ const launch = async () => {
     if (/uncaughtException|TypeError: Invalid URL/.test(text))
       nativeErrors.push(text);
   });
+  instance.process().on("exit", (code, signal) =>
+    console.log(`[process] pid=${instance.process().pid} exit=${code} signal=${signal}`),
+  );
+  instance.process().stdout.on("data", (data) =>
+    console.log("[stdout]", data.toString()),
+  );
   instance
     .process()
     .stderr.on("data", (data) => console.log("[electron]", data.toString()));
@@ -42,8 +48,8 @@ const launch = async () => {
       "window-all-closed",
     ])
       app.on(event, () =>
-        console.log(
-          `[lifecycle] ${event}; windows=${BrowserWindow.getAllWindows().length}`,
+        process.stdout.write(
+          `[lifecycle] ${event}; windows=${BrowserWindow.getAllWindows().length}\n`,
         ),
       );
   });
@@ -67,6 +73,7 @@ async function closeApp(instance, label) {
   } catch (error) {
     // Cleanup only after a failing shutdown assertion; never report a killed app as a pass.
     const child = instance.process();
+    console.error(`[shutdown] ${label}: pid=${child.pid} exit=${child.exitCode} signal=${child.signalCode}`);
     if (child.exitCode === null && child.signalCode === null) {
       if (process.platform === "win32")
         execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
