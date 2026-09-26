@@ -3,6 +3,9 @@ test("plan comparisons, router Auto choices, Free lock and Business audit coexis
   page,
 }) => {
   await page.goto("/demo");
+  await expect(
+    page.getByRole("heading", { name: "What can we get done?" }),
+  ).toBeVisible();
   await page.goto("/account");
   const comparison = page.locator(".plan-comparison");
   await expect(comparison).toContainText("$6/month · $60/year");

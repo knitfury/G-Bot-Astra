@@ -4,11 +4,6 @@ export const PLAN_LIMITS: Record<Plan, number> = {
   starter: 5,
   business: 8,
 };
-// Retained for legacy callers; connection identity/position never determines capacity.
-export const requiredPlan = (slot: number): Plan =>
-  slot < 1 ? "free" : slot < 5 ? "starter" : "business";
-export const slotAvailable = (e: Entitlement, slot: number) =>
-  e.status === "active" && slot < e.maxActiveConnections;
 export const routersAvailable = (e: Entitlement) =>
   e.status === "active" && e.plan !== "free";
 export const auditAvailable = (e: Entitlement) =>

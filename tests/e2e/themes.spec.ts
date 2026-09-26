@@ -75,13 +75,20 @@ for (const color of ["orange", "purple", "blue", "green", "neutral"])
           () => document.documentElement.scrollWidth <= innerWidth,
         ),
       ).toBeTruthy();
-      // Every visible UI surface must inherit the dark semantic palette.
+      const foundation = await page.locator("html").evaluate((el) => {
+        const style = getComputedStyle(el);
+        return ["--bg", "--surface", "--surface-alt", "--soft"].map((k) =>
+          style.getPropertyValue(k).trim(),
+        );
+      });
+      expect(foundation).toEqual(["#202020", "#2b2b2b", "#262626", "#363636"]);
+      // Large surfaces stay neutral; selected controls may use bright accents.
       await expect
         .poll(
           () =>
             page
               .locator(
-                ".panel, .dialog-content, .composer, .connection-card, input, textarea, select",
+                ".panel, .dialog-content, .composer, .connection-card, input:not([type=checkbox]), textarea, select",
               )
               .evaluateAll((elements) =>
                 elements

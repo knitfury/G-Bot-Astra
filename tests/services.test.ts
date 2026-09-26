@@ -5,7 +5,6 @@ import { get } from "../src/services/mocks/database";
 import {
   connectionAvailable,
   PLAN_LIMITS,
-  requiredPlan,
 } from "../src/lib/entitlements";
 import type { ProviderInput } from "../src/types/domain";
 const provider: ProviderInput = {
@@ -40,9 +39,6 @@ test("entitlement rules are centralized and downgrade retains all saved configur
     1,
   );
   assert.equal(get().connections.length, 8);
-  assert.equal(requiredPlan(0), "free");
-  assert.equal(requiredPlan(4), "starter");
-  assert.equal(requiredPlan(7), "business");
   assert.deepEqual(PLAN_LIMITS, { free: 1, starter: 5, business: 8 });
 });
 test("provider credentials and advanced headers never survive save", async () => {
