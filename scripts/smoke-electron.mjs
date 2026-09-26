@@ -31,12 +31,16 @@ const launch = async () => {
     if (/uncaughtException|TypeError: Invalid URL/.test(text))
       nativeErrors.push(text);
   });
-  instance.process().on("exit", (code, signal) =>
-    console.log(`[process] pid=${instance.process().pid} exit=${code} signal=${signal}`),
-  );
-  instance.process().stdout.on("data", (data) =>
-    console.log("[stdout]", data.toString()),
-  );
+  instance
+    .process()
+    .on("exit", (code, signal) =>
+      console.log(
+        `[process] pid=${instance.process().pid} exit=${code} signal=${signal}`,
+      ),
+    );
+  instance
+    .process()
+    .stdout.on("data", (data) => console.log("[stdout]", data.toString()));
   instance
     .process()
     .stderr.on("data", (data) => console.log("[electron]", data.toString()));
@@ -52,6 +56,13 @@ const launch = async () => {
           `[lifecycle] ${event}; windows=${BrowserWindow.getAllWindows().length}\n`,
         ),
       );
+  });
+  await instance.evaluate(({ BrowserWindow }) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      for (const event of ["close", "closed", "unresponsive"]) {
+        window.on(event, () => process.stdout.write(`[window] ${event}\n`));
+      }
+    }
   });
   return instance;
 };
@@ -73,7 +84,9 @@ async function closeApp(instance, label) {
   } catch (error) {
     // Cleanup only after a failing shutdown assertion; never report a killed app as a pass.
     const child = instance.process();
-    console.error(`[shutdown] ${label}: pid=${child.pid} exit=${child.exitCode} signal=${child.signalCode}`);
+    console.error(
+      `[shutdown] ${label}: pid=${child.pid} exit=${child.exitCode} signal=${child.signalCode}`,
+    );
     if (child.exitCode === null && child.signalCode === null) {
       if (process.platform === "win32")
         execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
@@ -237,23 +250,25 @@ try {
 } finally {
   await closeApp(app, "first launch");
 }
-const restarted = await launch();
-try {
-  const page = await restarted.firstWindow({ timeout: 60000 });
-  await page
-    .getByRole("heading", { name: "Meet your new way to work." })
-    .waitFor({ timeout: 60000 });
-  await page
-    .locator('html[data-color="blue"][data-appearance="dark"]')
-    .waitFor();
-  const r = await page.evaluate(() =>
-    window.gbot.call("desktop.readPreferences", []),
-  );
-  if (!r.ok || !r.value.includes("private-native-draft"))
-    throw Error("Encrypted preferences did not survive restart");
-  console.log("Encrypted native restart persistence passed.");
-} finally {
-  await closeApp(restarted, "restart");
+for (let restart = 1; restart <= 6; restart++) {
+  const restarted = await launch();
+  try {
+    const page = await restarted.firstWindow({ timeout: 60000 });
+    await page
+      .getByRole("heading", { name: "Meet your new way to work." })
+      .waitFor({ timeout: 60000 });
+    await page
+      .locator('html[data-color="blue"][data-appearance="dark"]')
+      .waitFor();
+    const r = await page.evaluate(() =>
+      window.gbot.call("desktop.readPreferences", []),
+    );
+    if (!r.ok || !r.value.includes("private-native-draft"))
+      throw Error("Encrypted preferences did not survive restart");
+    console.log("Encrypted native restart persistence passed.");
+  } finally {
+    await closeApp(restarted, `restart ${restart}`);
+  }
 }
 
 if (nativeErrors.length)
