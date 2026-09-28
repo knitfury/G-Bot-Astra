@@ -44,7 +44,12 @@ const launch = async () => {
   instance
     .process()
     .stderr.on("data", (data) => console.log("[electron]", data.toString()));
-  await instance.evaluate(({ app, BrowserWindow, safeStorage, ipcMain }) => {
+  await instance.evaluate(({ app, BrowserWindow, safeStorage, ipcMain, dialog }) => {
+    const originalErrorBox = dialog.showErrorBox;
+    dialog.showErrorBox = (...args) => {
+      process.stdout.write("[dialog] startup error box opened\n");
+      return originalErrorBox.apply(dialog, args);
+    };
     for (const name of [
       "isAsyncEncryptionAvailable",
       "encryptStringAsync",
