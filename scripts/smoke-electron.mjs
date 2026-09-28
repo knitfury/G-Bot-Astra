@@ -44,7 +44,34 @@ const launch = async () => {
   instance
     .process()
     .stderr.on("data", (data) => console.log("[electron]", data.toString()));
-  await instance.evaluate(({ app, BrowserWindow }) => {
+  await instance.evaluate(({ app, BrowserWindow, safeStorage, ipcMain }) => {
+    for (const name of [
+      "isAsyncEncryptionAvailable",
+      "encryptStringAsync",
+      "decryptStringAsync",
+    ]) {
+      const original = safeStorage[name];
+      safeStorage[name] = async (...args) => {
+        process.stdout.write(`[vault] ${name} start\n`);
+        try {
+          return await original(...args);
+        } finally {
+          process.stdout.write(`[vault] ${name} settled\n`);
+        }
+      };
+    }
+    ipcMain.on("gbot:context", () =>
+      process.stdout.write("[ipc] context returned\n"),
+    );
+    app.once("before-quit", () => {
+      setInterval(
+        () =>
+          process.stdout.write(
+            `[shutdown] main alive: ${process.getActiveResourcesInfo().join(",")}\n`,
+          ),
+        5000,
+      ).unref();
+    });
     for (const event of [
       "before-quit",
       "will-quit",
