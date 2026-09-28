@@ -19,6 +19,7 @@ const args = [
 ];
 const nativeErrors = [];
 const heldNavigations = new WeakMap();
+const heldURLs = new WeakMap();
 const launch = async (holdInitialNavigation = false) => {
   const instance = await electron.launch({
     executablePath,
@@ -32,6 +33,7 @@ const launch = async (holdInitialNavigation = false) => {
       if (route.request().isNavigationRequest()) {
         // Keep the initial load pending until closeApp destroys the window.
         heldNavigations.set(instance, (heldNavigations.get(instance) ?? 0) + 1);
+        heldURLs.set(instance, route.request().url());
         console.log("[startup] holding initial navigation");
       } else return route.continue();
     });
@@ -299,28 +301,38 @@ for (let restart = 1; restart <= 6; restart++) {
 // but the initial load cannot finish before we request a normal app quit.
 const loading = await launch(true);
 try {
-  await loading.firstWindow({ timeout: 60000 });
   await expect
     .poll(() => heldNavigations.has(loading), { timeout: 15000 })
     .toBe(true);
+  expect(
+    await loading.evaluate(({ BrowserWindow }) => {
+      const windows = BrowserWindow.getAllWindows();
+      return (
+        windows.length === 1 && windows[0].webContents.isLoadingMainFrame()
+      );
+    }),
+  ).toBe(true);
 } finally {
   await closeApp(loading, "quit during navigation");
 }
 
 const reloading = await launch(true);
 try {
-  await reloading.firstWindow({ timeout: 60000 });
   await expect
     .poll(() => heldNavigations.get(reloading) ?? 0, { timeout: 15000 })
     .toBe(1);
-  await reloading.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].webContents.reload(),
-  );
+  await reloading.evaluate(({ BrowserWindow }, url) => {
+    // Start a replacement navigation without waiting for the held response.
+    // Its promise is expected to reject when this test quits the app.
+    void BrowserWindow.getAllWindows()[0]
+      .loadURL(url)
+      .catch(() => {});
+  }, heldURLs.get(reloading));
   await expect
     .poll(() => heldNavigations.get(reloading) ?? 0, { timeout: 15000 })
     .toBe(2);
 } finally {
-  await closeApp(reloading, "reload during initial navigation");
+  await closeApp(reloading, "replacement during initial navigation");
 }
 
 if (nativeErrors.length)
