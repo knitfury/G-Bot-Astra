@@ -54,7 +54,7 @@ const launch = async () => {
       safeStorage[name] = async (...args) => {
         process.stdout.write(`[vault] ${name} start\n`);
         try {
-          return await original(...args);
+          return await original.apply(safeStorage, args);
         } finally {
           process.stdout.write(`[vault] ${name} settled\n`);
         }
