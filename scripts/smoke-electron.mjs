@@ -18,7 +18,7 @@ const args = [
   `--user-data-dir=${data}`,
 ];
 const nativeErrors = [];
-const heldNavigations = new WeakSet();
+const heldNavigations = new WeakMap();
 const launch = async (holdInitialNavigation = false) => {
   const instance = await electron.launch({
     executablePath,
@@ -31,7 +31,7 @@ const launch = async (holdInitialNavigation = false) => {
     await instance.context().route("**/*", (route) => {
       if (route.request().isNavigationRequest()) {
         // Keep the initial load pending until closeApp destroys the window.
-        heldNavigations.add(instance);
+        heldNavigations.set(instance, (heldNavigations.get(instance) ?? 0) + 1);
         console.log("[startup] holding initial navigation");
       } else return route.continue();
     });
@@ -306,6 +306,22 @@ try {
     .toBe(true);
 } finally {
   await closeApp(loading, "quit during navigation");
+}
+
+const reloading = await launch(true);
+try {
+  await reloading.firstWindow({ timeout: 60000 });
+  await expect
+    .poll(() => heldNavigations.get(reloading) ?? 0, { timeout: 15000 })
+    .toBe(1);
+  await reloading.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.reload(),
+  );
+  await expect
+    .poll(() => heldNavigations.get(reloading) ?? 0, { timeout: 15000 })
+    .toBe(2);
+} finally {
+  await closeApp(reloading, "reload during initial navigation");
 }
 
 if (nativeErrors.length)

@@ -353,9 +353,11 @@ async function boot() {
         origin + (demoMode ? "/demo" : runtime.db.user ? "/workspace" : "/"),
       );
     } catch (error) {
-      // Destroying a loading window rejects loadURL (ERR_ABORTED or ERR_FAILED).
-      // An intentional quit must not open a blocking startup-error dialog.
-      if (!shuttingDown) throw error;
+      // A reload/new navigation cancels the previous load with ERR_ABORTED.
+      // Destroying a loading window can also report ERR_FAILED. Neither is a
+      // startup failure during an intentional quit; a modal would block exit.
+      if (!shuttingDown && (error as { code?: string })?.code !== "ERR_ABORTED")
+        throw error;
     }
   };
   session.defaultSession.setPermissionRequestHandler(
