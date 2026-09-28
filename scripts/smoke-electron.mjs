@@ -87,6 +87,7 @@ const launch = async (holdInitialNavigation = false) => {
 };
 async function closeApp(instance, label) {
   console.log(`[shutdown] ${label}: requesting graceful close`);
+  const child = instance.process();
   let timer;
   try {
     await Promise.race([
@@ -99,7 +100,6 @@ async function closeApp(instance, label) {
         );
       }),
     ]);
-    const child = instance.process();
     if (child.exitCode !== 0 || child.signalCode !== null)
       throw Error(
         `${label}: abnormal Electron exit (${child.exitCode}, ${child.signalCode})`,
@@ -107,7 +107,6 @@ async function closeApp(instance, label) {
     console.log(`[shutdown] ${label}: process exited cleanly`);
   } catch (error) {
     // Cleanup only after a failing shutdown assertion; never report a killed app as a pass.
-    const child = instance.process();
     console.error(
       `[shutdown] ${label}: pid=${child.pid} exit=${child.exitCode} signal=${child.signalCode}`,
     );
