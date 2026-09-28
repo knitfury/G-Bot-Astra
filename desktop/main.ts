@@ -348,9 +348,15 @@ async function boot() {
       event.preventDefault(),
     );
     window.once("ready-to-show", () => window?.show());
-    await window.loadURL(
-      origin + (demoMode ? "/demo" : runtime.db.user ? "/workspace" : "/"),
-    );
+    try {
+      await window.loadURL(
+        origin + (demoMode ? "/demo" : runtime.db.user ? "/workspace" : "/"),
+      );
+    } catch (error) {
+      // Destroying a loading window rejects loadURL (ERR_ABORTED or ERR_FAILED).
+      // An intentional quit must not open a blocking startup-error dialog.
+      if (!shuttingDown) throw error;
+    }
   };
   session.defaultSession.setPermissionRequestHandler(
     (_wc, _permission, callback) => callback(false),
@@ -585,10 +591,8 @@ async function boot() {
       },
     ]),
   );
-  await createWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
-  });
+  // A visible/interactive renderer does not imply loadURL() has settled.
+  // Install shutdown handling before navigation can be cancelled by a quit.
   app.on("before-quit", (event) => {
     if (shuttingDown) return;
     event.preventDefault();
@@ -599,6 +603,11 @@ async function boot() {
       app.quit();
     });
   });
+  app.on("activate", () => {
+    if (!shuttingDown && BrowserWindow.getAllWindows().length === 0)
+      void createWindow();
+  });
+  await createWindow();
 }
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

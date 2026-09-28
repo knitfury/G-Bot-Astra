@@ -1,4 +1,5 @@
 import { _electron as electron } from "playwright";
+import { expect } from "@playwright/test";
 import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -17,7 +18,8 @@ const args = [
   `--user-data-dir=${data}`,
 ];
 const nativeErrors = [];
-const launch = async () => {
+const heldNavigations = new WeakSet();
+const launch = async (holdInitialNavigation = false) => {
   const instance = await electron.launch({
     executablePath,
     args,
@@ -25,6 +27,15 @@ const launch = async () => {
     env: { ...process.env, NODE_ENV: "production" },
   });
   instance.context().setDefaultTimeout(15000);
+  if (holdInitialNavigation) {
+    await instance.context().route("**/*", (route) => {
+      if (route.request().isNavigationRequest()) {
+        // Keep the initial load pending until closeApp destroys the window.
+        heldNavigations.add(instance);
+        console.log("[startup] holding initial navigation");
+      } else return route.continue();
+    });
+  }
   instance.on("console", (message) => {
     const text = message.text();
     console.log("[main]", text);
@@ -38,45 +49,21 @@ const launch = async () => {
         `[process] pid=${instance.process().pid} exit=${code} signal=${signal}`,
       ),
     );
-  instance
-    .process()
-    .stdout.on("data", (data) => console.log("[stdout]", data.toString()));
+  instance.process().stdout.on("data", (data) => {
+    const text = data.toString();
+    console.log("[stdout]", text);
+    if (text.includes("[native-error]"))
+      nativeErrors.push("Unexpected native error dialog");
+  });
   instance
     .process()
     .stderr.on("data", (data) => console.log("[electron]", data.toString()));
-  await instance.evaluate(({ app, BrowserWindow, safeStorage, ipcMain, dialog }) => {
-    const originalErrorBox = dialog.showErrorBox;
+  await instance.evaluate(({ app, BrowserWindow, dialog }) => {
+    const showErrorBox = dialog.showErrorBox;
     dialog.showErrorBox = (...args) => {
-      process.stdout.write("[dialog] startup error box opened\n");
-      return originalErrorBox.apply(dialog, args);
+      process.stdout.write("[native-error] unexpected error dialog\n");
+      return showErrorBox.apply(dialog, args);
     };
-    for (const name of [
-      "isAsyncEncryptionAvailable",
-      "encryptStringAsync",
-      "decryptStringAsync",
-    ]) {
-      const original = safeStorage[name];
-      safeStorage[name] = async (...args) => {
-        process.stdout.write(`[vault] ${name} start\n`);
-        try {
-          return await original.apply(safeStorage, args);
-        } finally {
-          process.stdout.write(`[vault] ${name} settled\n`);
-        }
-      };
-    }
-    ipcMain.on("gbot:context", () =>
-      process.stdout.write("[ipc] context returned\n"),
-    );
-    app.once("before-quit", () => {
-      setInterval(
-        () =>
-          process.stdout.write(
-            `[shutdown] main alive: ${process.getActiveResourcesInfo().join(",")}\n`,
-          ),
-        5000,
-      ).unref();
-    });
     for (const event of [
       "before-quit",
       "will-quit",
@@ -112,7 +99,12 @@ async function closeApp(instance, label) {
         );
       }),
     ]);
-    console.log(`[shutdown] ${label}: process exited`);
+    const child = instance.process();
+    if (child.exitCode !== 0 || child.signalCode !== null)
+      throw Error(
+        `${label}: abnormal Electron exit (${child.exitCode}, ${child.signalCode})`,
+      );
+    console.log(`[shutdown] ${label}: process exited cleanly`);
   } catch (error) {
     // Cleanup only after a failing shutdown assertion; never report a killed app as a pass.
     const child = instance.process();
@@ -261,6 +253,7 @@ try {
     "Native isolation, production entitlement rejection, encrypted storage, single-window isolated Demo and business panes passed. Live login is an external acceptance gate.",
   );
 } catch (error) {
+  console.error("Native assertion failed", error);
   await fs.mkdir("test-results-electron", { recursive: true });
   for (const [index, page] of app.windows().entries()) {
     await page
@@ -301,6 +294,18 @@ for (let restart = 1; restart <= 6; restart++) {
   } finally {
     await closeApp(restarted, `restart ${restart}`);
   }
+}
+
+// Reproduce the shutdown race deterministically: the native window exists,
+// but the initial load cannot finish before we request a normal app quit.
+const loading = await launch(true);
+try {
+  await loading.firstWindow({ timeout: 60000 });
+  await expect
+    .poll(() => heldNavigations.has(loading), { timeout: 15000 })
+    .toBe(true);
+} finally {
+  await closeApp(loading, "quit during navigation");
 }
 
 if (nativeErrors.length)
