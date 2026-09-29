@@ -1,4 +1,5 @@
 "use client";
+import { contextConnections } from "@/lib/connections";
 import Link from "next/link";
 import { auditAvailable } from "@/lib/entitlements";
 import { exportAudit } from "@/lib/audit";
@@ -105,18 +106,19 @@ export function ActivityScreen() {
                   Keep Activity
                   <select
                     value={data.preferences.activityRetention ?? 0}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const days = e.currentTarget.value;
                       void operation
                         .mutateAsync(async () => {
                           const r = await desktopCall(
                             "desktop.data",
                             "audit-retention",
-                            e.target.value,
+                            days,
                           );
                           setNotice(r.message ?? "");
                         })
-                        .catch(() => {})
-                    }
+                        .catch(() => {});
+                    }}
                   >
                     <option value={0}>Until I delete it</option>
                     <option value={30}>30 days</option>
@@ -181,7 +183,7 @@ export function ActivityScreen() {
           Application
           <select aria-label="Application" value={app} onChange={(e) => setApp(e.target.value)}>
             <option value="">All applications</option>
-            {data.connections.map((c) => (
+            {contextConnections(data).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
@@ -253,7 +255,7 @@ export function ActivityScreen() {
       ) : (
         <div className="activity-list">
           {filtered.map((a) => {
-            const c = data.connections.find((c) => c.id === a.connectionId);
+            const c = contextConnections(data).find((c) => c.id === a.connectionId);
             return (
               <details className="activity-event" key={a.id}>
                 <summary>

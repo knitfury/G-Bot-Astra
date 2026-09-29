@@ -165,6 +165,12 @@ test("downgrade retains eight configurations and limits execution", async ({
   page,
 }, info) => {
   await demo(page);
+  await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem("gbot-demo-v1")!);
+    db.connections = db.demoConnections.map((c: object) => ({ ...c, userConfigured: true }));
+    db.demoConnections = [];
+    localStorage.setItem("gbot-demo-v1", JSON.stringify(db));
+  });
   await page.goto("/account");
   await page.getByRole("button", { name: "Switch to starter" }).click();
   await page.getByRole("button", { name: "Confirm demo plan" }).click();

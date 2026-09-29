@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { fixtureRuntime } from "../fixtures/desktop";
 import { validateOperation } from "../../desktop/runtime/ipc";
+import { applyRetention } from "../../desktop/runtime/native-data";
 import { mkdir } from "node:fs/promises";
 test("business snapshots, bulk permissions, wrapped identifiers and restored settings", async ({
   page,
@@ -42,6 +43,14 @@ test("business snapshots, bulk permissions, wrapped identifiers and restored set
         },
       ],
     });
+  const inventoryId = await f.runtime.services.connections.save({ name: "Test Stock", category: "Inventory", slot: 1, url: "https://stock.example/mcp", auth: "None" });
+  await f.runtime.services.connections.connect(inventoryId, true);
+  const stock = f.runtime.db.connections.find(c => c.id === inventoryId)!;
+  stock.tools[0] = { ...stock.tools[0], name: "list_inventory", inputSchema: { type: "object", properties: {} }, enabled: true };
+  const readMail = f.runtime.mcp.call;
+  f.runtime.mcp.call = async (...args) => args[0].category === "Inventory"
+    ? JSON.stringify({ items: [{ id: "sku-1", name: "ARC Lamp", sku: "ARC-01", description: "Sand finish", stock: 24 }] })
+    : readMail(...args);
   let preferences: string | null = null;
   await page.exposeFunction(
     "fixtureRequest",
@@ -52,6 +61,8 @@ test("business snapshots, bulk permissions, wrapped identifiers and restored set
         if (r.operation === "desktop.readPreferences") value = preferences;
         else if (r.operation === "desktop.savePreferences")
           preferences = r.args[0] as string;
+        else if (r.operation === "desktop.retention")
+          value = await applyRetention(f.runtime, r.args[0] as 0 | 30 | 90 | 180);
         else if (r.operation === "snapshot")
           value = await f.runtime.services.snapshot();
         else {
@@ -86,6 +97,16 @@ test("business snapshots, bulk permissions, wrapped identifiers and restored set
     page.getByText("Stock request for ARC lamps").first(),
   ).toBeVisible();
   await expect(page.getByText("CONNECTED CAPABILITIES")).toHaveCount(0);
+  await expect(page.locator(".right .snapshot-detail h3")).toHaveText("ARC Lamp");
+  await expect(page.locator(".left .snapshot-item p").first()).toHaveCSS("font-size", "13px");
+  await expect(page.locator(".left .snapshot-item strong").first()).toHaveCSS("font-size", "13px"); // Subject unchanged.
+  await expect(page.locator(".left .snapshot-detail .record-body")).toHaveCSS("font-size", "12px");
+  await expect(page.locator(".right .snapshot-item strong")).toHaveCSS("font-size", "14px");
+  await expect(page.locator(".right .snapshot-item p")).toHaveCSS("font-size", "13px");
+  await expect(page.locator(".right .snapshot-detail h3")).toHaveCSS("font-size", "16px");
+  await expect(page.locator(".right .snapshot-detail .record-body")).toHaveCSS("font-size", "12px");
+  await expect(page.locator(".right .snapshot-detail dl")).toHaveCSS("font-size", "12px"); // Stock/date metadata unchanged.
+
   await page
     .getByRole("button", { name: "Ask G-Bot about this", exact: true })
     .first()
@@ -139,6 +160,12 @@ test("business snapshots, bulk permissions, wrapped identifiers and restored set
   await expect(
     page.getByRole("heading", { name: "Custom integrations" }),
   ).toBeVisible();
+  await page.getByLabel("Keep conversation history").selectOption("90");
+  await expect(page.getByLabel("Keep conversation history")).toHaveValue("90");
+  await f.runtime.init();
+  await page.reload();
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(page.getByLabel("Keep conversation history")).toHaveValue("90");
   await page.screenshot({
     path: "docs/screenshots/phase3/advanced-neutral-dark.png",
   });

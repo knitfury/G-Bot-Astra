@@ -1,4 +1,5 @@
 "use client";
+import { contextConnections } from "@/lib/connections";
 import { isRouter } from "@/lib/providers";
 import { routersAvailable } from "@/lib/entitlements";
 import { useRef, useState } from "react";
@@ -338,8 +339,8 @@ export function ChatComposer({
         </div>
         {context && (
           <div className="composer-context">
-            {data?.connections
-              .filter((c) => connectionAvailable(data.entitlement, c))
+            {(data ? contextConnections(data) : [])
+              .filter((c) => data && connectionAvailable(data.entitlement, c))
               .map((c) => (
                 <span className="row" key={c.id}>
                   <AppIcon category={c.category} size={13} />

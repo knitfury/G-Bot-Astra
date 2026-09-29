@@ -155,3 +155,25 @@ test("runtime rejects router configuration and execution on Free; Business audit
   assert.equal(runtime.db.activity.length, 0);
   assert.equal(runtime.db.conversations, before);
 });
+
+test("durable Advanced and other account settings restore without resetting unrelated preferences", async () => {
+  const { runtime } = await fixtureRuntime();
+  await runtime.services.account.preferences({ startup: false, notifications: false, activityVisible: false, diagnosticsConsent: true, historyRetention: 90, onboardingStep: 4 });
+  runtime.db.preferences.activityRetention = 180;
+  await runtime.save();
+  await runtime.init();
+  assert.deepEqual(runtime.db.preferences, { startup: false, notifications: false, activityVisible: false, diagnosticsConsent: true, historyRetention: 90, onboardingStep: 4, activityRetention: 180 });
+  await runtime.services.account.preferences({ diagnosticsConsent: false });
+  await runtime.init();
+  assert.equal(runtime.db.preferences.notifications, false);
+  assert.equal(runtime.db.preferences.historyRetention, 90);
+  assert.equal(runtime.db.preferences.diagnosticsConsent, false);
+  // Invalid individual fields do not discard valid fields or other workspace data.
+  Object.assign(runtime.db.preferences, { activityVisible: "bad", historyRetention: -1 });
+  await runtime.save();
+  await runtime.init();
+  assert.equal(runtime.db.preferences.activityVisible, true);
+  assert.equal(runtime.db.preferences.historyRetention, undefined);
+  assert.equal(runtime.db.preferences.startup, false);
+  assert.equal(runtime.db.preferences.onboardingStep, 4);
+});

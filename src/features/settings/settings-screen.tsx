@@ -403,14 +403,10 @@ export function SettingsScreen() {
                   Next sign-in failure
                   <select
                     value={data.diagnostics.authFailure}
-                    onChange={(e) =>
-                      run(() =>
-                        services.diagnostics.set({
-                          authFailure: e.target
-                            .value as Diagnostics["authFailure"],
-                        }),
-                      )
-                    }
+                    onChange={(e) => {
+                      const authFailure = e.currentTarget.value as Diagnostics["authFailure"];
+                      run(() => services.diagnostics.set({ authFailure }));
+                    }}
                   >
                     <option value="none">None</option>
                     <option value="credentials">Invalid credentials</option>

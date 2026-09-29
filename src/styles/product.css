@@ -2415,3 +2415,19 @@
 .plan-comparison table { width: 100%; border-collapse: collapse; min-width: 620px; }
 .plan-comparison th, .plan-comparison td { padding: 12px; border-bottom: 1px solid var(--line); text-align: left; }
 .connection-card h3, .activity-detail, .provider-card h3 { overflow-wrap: anywhere; }
+
+/* Reusable business-content role: exactly +1px, without changing metadata. */
+.record-item strong { --context-base-size: 11px; }
+.record-item p { --context-base-size: 10px; }
+.record-detail h3 { --context-base-size: 13px; }
+.record-detail .tiny { --context-base-size: 11px; }
+.sender strong { --context-base-size: 10px; }
+.record-body { --context-base-size: 11px; }
+.snapshot-item strong { --context-base-size: 13px; }
+.snapshot-item p { --context-base-size: 12px; }
+.snapshot-detail h3 { --context-base-size: 15px; }
+.snapshot-detail dd { --context-base-size: 12px; }
+@media (min-width: 1550px) {
+  .record-item strong, .record-body { --context-base-size: 12px; }
+}
+.business-pane .context-content { font-size: calc(var(--context-base-size) + 1px); }

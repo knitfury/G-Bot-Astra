@@ -1,3 +1,5 @@
+import { migrateDemoConnections } from "../../src/lib/connections";
+import { normalizePreferences } from "../../src/lib/preferences";
 import { retainActivity } from "../../src/lib/audit";
 import { validateRouter } from "../../src/lib/providers";
 import type { ProductionIdentity } from "./identity";
@@ -63,7 +65,7 @@ export function databaseShape(value: unknown): value is Database {
     );
   if (!obj(value)) return false;
   const d = value;
-  return (
+  const valid = (
     d.schema === 1 &&
     Number.isInteger(d.revision) &&
     (d.user === null ||
@@ -172,13 +174,13 @@ export function databaseShape(value: unknown): value is Database {
       ]),
     ) &&
     Array.isArray(d.records) &&
-    obj(d.preferences) &&
-    ["startup", "notifications", "activityVisible"].every(
-      (k) => typeof (d.preferences as Record<string, unknown>)[k] === "boolean",
-    ) &&
     obj(d.diagnostics) &&
     typeof d.updateStatus === "string"
   );
+  // Migrate only preference fields after all other workspace structure passes.
+  // This also makes restored backups safe before their next runtime init.
+  if (valid) d.preferences = normalizePreferences(d.preferences);
+  return valid;
 }
 export class Runtime {
   db: Database = localDatabase();
@@ -422,6 +424,7 @@ export class Runtime {
           this.db.connections = this.db.connections.filter((c) => c.id !== cid);
           this.db.connections.push({
             id: cid,
+            userConfigured: true,
             slot: input.slot,
             name: input.name,
             url: input.url,
@@ -664,6 +667,9 @@ export class Runtime {
       version: "1.0.0",
       notice: this.store.recovery || localDatabase().runtime!.notice,
     };
+    migrateDemoConnections(this.db);
+    delete this.db.demoConnections;
+    this.db.preferences = normalizePreferences(this.db.preferences);
     if(this.identity)this.db.entitlement.status="expired";
     for (const c of this.db.connections) {
       c.status = "disconnected";

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mockServices as services } from "../src/services/mocks";
+import { contextConnections } from "../src/lib/connections";
 import { get } from "../src/services/mocks/database";
 import {
   connectionAvailable,
@@ -22,26 +23,28 @@ const provider: ProviderInput = {
   tools: true,
 };
 test("entitlement rules are centralized and downgrade retains all saved configuration", async () => {
+  await services.account.reset();
   await services.auth.demo();
-  const configurations = () => get().connections.map(({enabled, status, ...c}) => c);
+  const configurations = () => contextConnections(get()).map(({enabled, status, ...c}) => c);
   const original = JSON.stringify(configurations());
   await services.entitlements.change("starter");
   assert.equal(
-    get().connections.filter((c) => connectionAvailable(get().entitlement, c))
+    contextConnections(get()).filter((c) => connectionAvailable(get().entitlement, c))
       .length,
     5,
   );
   assert.equal(JSON.stringify(configurations()), original);
   await services.entitlements.change("free");
   assert.equal(
-    get().connections.filter((c) => connectionAvailable(get().entitlement, c))
+    contextConnections(get()).filter((c) => connectionAvailable(get().entitlement, c))
       .length,
     1,
   );
-  assert.equal(get().connections.length, 8);
+  assert.equal(contextConnections(get()).length, 8);
   assert.deepEqual(PLAN_LIMITS, { free: 1, starter: 5, business: 8 });
 });
 test("provider credentials and advanced headers never survive save", async () => {
+  await services.account.reset();
   await services.auth.demo();
   await services.providers.save(provider);
   const saved = get().providers.find((p) => p.name === provider.name)!;
@@ -60,6 +63,7 @@ test("provider credentials and advanced headers never survive save", async () =>
   );
 });
 test("signature task preserves partial results and retries only the failed tool", async () => {
+  await services.account.reset();
   await services.auth.demo();
   await services.diagnostics.set({ inventoryFailure: true });
   const cid = await services.conversations.create("model-demo");
@@ -82,6 +86,7 @@ test("signature task preserves partial results and retries only the failed tool"
   assert.equal(get().activity.filter((a) => a.tool === "email.read").length, 1);
 });
 test("support action requires approval and rechecks entitlement and tool permission", async () => {
+  await services.account.reset();
   await services.auth.demo();
   const cid = await services.conversations.create("model-demo");
   await services.execution.run(
@@ -112,6 +117,7 @@ test("support action requires approval and rechecks entitlement and tool permiss
   await assert.rejects(() => services.approvals.resolve(a.id, true), /already/);
 });
 test("rejecting email has no simulated send side effect; logout clears credential state", async () => {
+  await services.account.reset();
   await services.auth.demo();
   const cid = await services.conversations.create("model-demo");
   await services.execution.run(
@@ -131,9 +137,10 @@ test("rejecting email has no simulated send side effect; logout clears credentia
   await services.auth.logout();
   assert.equal(get().user, null);
   assert.ok(get().providers.every((p) => p.status === "disconnected"));
-  assert.ok(get().connections.every((c) => !c.enabled));
+  assert.ok(contextConnections(get()).every((c) => !c.enabled));
 });
 test("stopping generation cancels remaining steps without approval", async () => {
+  await services.account.reset();
   await services.auth.demo();
   const cid = await services.conversations.create("model-demo");
   const run = services.execution.run(

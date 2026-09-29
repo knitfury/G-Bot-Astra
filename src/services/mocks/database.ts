@@ -1,3 +1,6 @@
+import { demoStorage } from "@/lib/demo-storage";
+import { migrateDemoConnections } from "@/lib/connections";
+import { normalizePreferences, normalizeDiagnostics } from "@/lib/preferences";
 import { reconcileConnections } from "@/lib/entitlements";
 import type { Database } from "@/types/domain";
 import { initialDatabase } from "@/data/mocks/seed";
@@ -7,10 +10,15 @@ let hydrated = false;
 export const get = () => db;
 export function persist() {
   reconcileConnections(db.entitlement, db.connections);
+  reconcileConnections(db.entitlement, db.demoConnections ?? []);
   db = { ...db, revision: db.revision + 1 };
   if (typeof window !== "undefined") {
     try {
-      localStorage.setItem("gbot-demo-v1", JSON.stringify(db));
+      void Promise.resolve(
+        demoStorage.setItem("gbot-demo-v1", JSON.stringify(db)),
+      ).catch(() => {
+        /* Retain in-memory state on write failure. */
+      });
     } catch {
       /* Session remains usable if storage is full or disabled. */
     }
@@ -25,11 +33,14 @@ export function hydrate() {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
   try {
-    const saved = localStorage.getItem("gbot-demo-v1");
+    const saved = demoStorage.getItem("gbot-demo-v1");
     if (saved) {
       const parsed = JSON.parse(saved) as Database;
       if (parsed.schema === 1) {
         db = parsed;
+        db.preferences = normalizePreferences(db.preferences);
+        db.diagnostics = normalizeDiagnostics(db.diagnostics);
+        migrateDemoConnections(db);
         for (const c of db.conversations) {
           for (const m of c.messages) {
             if (m.status === "running") {
@@ -43,7 +54,7 @@ export function hydrate() {
             }
           }
         }
-        for (const c of db.connections) {
+        for (const c of [...db.connections, ...(db.demoConnections ?? [])]) {
           if (c.status === "connecting") {
             c.status = "disconnected";
             c.enabled = false;

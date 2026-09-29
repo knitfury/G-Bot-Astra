@@ -1,4 +1,5 @@
 "use client";
+import { contextConnections } from "@/lib/connections";
 import { CatalogBrowser } from "./catalog-browser";
 import { useState } from "react";
 import { AsyncCheckbox } from "@/components/ui/async-checkbox";
@@ -349,6 +350,9 @@ export function ConnectionManager({
         </Link>
       </div>
 
+      {!!data.demoConnections?.length && !data.runtime && (
+        <Notice>Workspace Demo examples are fictional context, not saved MCP connections. Add your own configuration here to try the connection setup.</Notice>
+      )}
       {!data.connections.length && (
         <Empty
           title="Your Connections"
@@ -433,7 +437,7 @@ export function ConnectionDetail({ id }: { id: string }) {
     [remove, setRemove] = useState(false),
     [consent, setConsent] = useState(false);
   if (!data) return <Loading />;
-  const c = data.connections.find((c) => c.id === id);
+  const c = contextConnections(data).find((c) => c.id === id);
   if (!c)
     return (
       <Empty
@@ -443,7 +447,7 @@ export function ConnectionDetail({ id }: { id: string }) {
         action="Back to connected apps"
       />
     );
-  const available = canActivate(data.entitlement, data.connections, c.id);
+  const available = canActivate(data.entitlement, !data.runtime && data.demoConnections?.includes(c) ? data.demoConnections : data.connections, c.id);
   return (
     <div className="page">
       <Link className="row text-link tiny" href="/connections">

@@ -194,6 +194,19 @@ try {
   );
   if (disk.includes("private-native-draft") || JSON.parse(disk).version !== 2)
     throw Error("Native preferences were not encrypted");
+  const accountPrefs = {
+    startup: false,
+    notifications: false,
+    activityVisible: false,
+    diagnosticsConsent: true,
+    historyRetention: 90,
+    onboardingStep: 3,
+  };
+  const settingsSaved = await page.evaluate(
+    (values) => window.gbot.call("account.preferences", [values]),
+    accountPrefs,
+  );
+  if (!settingsSaved.ok) throw Error("Native durable settings save failed");
   const workspace = await fs.readFile(
     path.join(data, "real-v1", "workspace.json"),
     "utf8",
@@ -229,6 +242,23 @@ try {
   await page.screenshot({
     path: `test-results-electron/${packaged ? "packaged-" : ""}production-signin.png`,
   });
+  await demo.goto(new URL("/connections", demo.url()).href);
+  await expect(demo.locator(".connection-card")).toHaveCount(0);
+  await expect(demo.locator(".connection-summary")).toContainText("0 of 8");
+  await demo.goto(new URL("/settings", demo.url()).href);
+  await demo.getByRole("button", { name: "General", exact: true }).click();
+  await demo.getByRole("switch", { name: "Desktop notifications" }).uncheck();
+  await demo.getByRole("button", { name: "Advanced", exact: true }).click();
+  await demo
+    .getByRole("switch", { name: "Inventory unavailable", exact: true })
+    .check();
+  await demo.getByLabel("Next sign-in failure").selectOption("network");
+  await demo.getByRole("button", { name: "Appearance", exact: true }).click();
+  await demo.getByRole("radio", { name: "green", exact: true }).check();
+  // The Demo store has no ability to read or write real workspace keys.
+  await expect(
+    demo.evaluate(() => window.gbotDemo.setItem("workspace.json", "{}")),
+  ).rejects.toThrow();
   const unchanged = await fs.readFile(
     path.join(data, "real-v1", "workspace.json"),
     "utf8",
@@ -291,7 +321,51 @@ for (let restart = 1; restart <= 6; restart++) {
     );
     if (!r.ok || !r.value.includes("private-native-draft"))
       throw Error("Encrypted preferences did not survive restart");
-    console.log("Encrypted native restart persistence passed.");
+    const restored = await page.evaluate(() =>
+      window.gbot.call("snapshot", []),
+    );
+    expect(restored.value.preferences).toMatchObject({
+      startup: false,
+      notifications: false,
+      activityVisible: false,
+      diagnosticsConsent: true,
+      historyRetention: 90,
+      onboardingStep: 3,
+    });
+    if (restart === 1) {
+      await page
+        .getByRole("button", { name: "Explore Demo", exact: true })
+        .click();
+      await page
+        .getByRole("heading", { name: "What can we get done?" })
+        .waitFor();
+      await expect(page.locator("html")).toHaveAttribute("data-color", "green");
+      await page.goto(new URL("/settings", page.url()).href);
+      await page.getByRole("button", { name: "Advanced", exact: true }).click();
+      await expect(
+        page.getByRole("switch", {
+          name: "Inventory unavailable",
+          exact: true,
+        }),
+      ).toBeChecked();
+      await expect(page.getByLabel("Next sign-in failure")).toHaveValue("network");
+      await page.getByRole("button", { name: "General", exact: true }).click();
+      await expect(
+        page.getByRole("switch", { name: "Desktop notifications" }),
+      ).not.toBeChecked();
+      const demoDisk = await fs.readFile(
+        path.join(data, "demo-v1", "demo.json"),
+        "utf8",
+      );
+      if (
+        JSON.parse(demoDisk).version !== 2 ||
+        demoDisk.includes("inventoryFailure")
+      )
+        throw Error("Demo storage was not encrypted");
+    }
+    console.log(
+      "Encrypted native and isolated Demo restart persistence passed.",
+    );
   } finally {
     await closeApp(restarted, `restart ${restart}`);
   }

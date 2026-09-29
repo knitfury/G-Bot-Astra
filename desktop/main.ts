@@ -271,6 +271,28 @@ async function boot() {
     vault,
   );
   let preferences = await prefs.read();
+  const demoStore = new EncryptedStore<Record<string, string>>(
+    join(app.getPath("userData"), "demo-v1"), "demo.json", () => ({}), stringMap, vault,
+  );
+  const demoData = await demoStore.read();
+  const demoKey = (key: unknown): key is string =>
+    key === "gbot-demo-v1" || key === "gbot-workspace-v1";
+  const trustedDemo = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) =>
+    !!window && !window.isDestroyed() && demoMode && !!event.senderFrame &&
+    trustedSender(event.sender.id, window.webContents.id, event.senderFrame.url, origin,
+      event.senderFrame === event.sender.mainFrame);
+  ipcMain.on("gbot:demo-read", (event, key: unknown) => {
+    try { event.returnValue = trustedDemo(event) && demoKey(key) ? demoData[key] ?? null : null; }
+    catch { event.returnValue = null; }
+  });
+  ipcMain.handle("gbot:demo-write", async (event, key: unknown, value: unknown) => {
+    if (!trustedDemo(event) || !demoKey(key) ||
+      (value !== null && (typeof value !== "string" || value.length > 20_000_000)))
+      throw new Error("Invalid Demo storage request");
+    if (value === null) delete demoData[key];
+    else { JSON.parse(value as string); demoData[key] = value as string; }
+    await demoStore.write(demoData);
+  });
   autoUpdater.allowDowngrade = false;
   autoUpdater.allowPrerelease = false;
   autoUpdater.autoDownload = false;
@@ -600,7 +622,7 @@ async function boot() {
     event.preventDefault();
     shuttingDown = true;
     runtime.engine.stopAll();
-    void runtime.save().finally(() => {
+    void Promise.all([runtime.save(), demoStore.write(demoData)]).finally(() => {
       server.close();
       app.quit();
     });

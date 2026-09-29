@@ -53,5 +53,6 @@ export interface DesktopBridge {
 declare global {
   interface Window {
     gbot?: DesktopBridge;
+    gbotDemo?: { getItem(name: string): string | null; setItem(name: string, value: string | null): Promise<void> };
   }
 }

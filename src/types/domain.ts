@@ -101,6 +101,7 @@ export interface MCPTool {
   enabled: boolean;
 }
 export interface MCPConnection {
+  userConfigured?: boolean;
   id: string;
   slot: number;
   name: string;
@@ -244,6 +245,8 @@ export interface Database {
   entitlement: Entitlement;
   providers: AIProviderConnection[];
   connections: MCPConnection[];
+  /** Fictional Demo examples; never user-saved MCP configurations. */
+  demoConnections?: MCPConnection[];
   conversations: Conversation[];
   approvals: ApprovalRequest[];
   activity: ActivityEvent[];

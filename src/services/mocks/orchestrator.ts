@@ -1,3 +1,4 @@
+import { contextConnections } from "@/lib/connections";
 import { validateRouter } from "@/lib/providers";
 import type {
   ApprovalRequest,
@@ -33,7 +34,7 @@ const assertOnline = () => {
 };
 export function permitted(category: Category, write = false) {
   assertOnline();
-  const c = get().connections.find(
+  const c = contextConnections(get()).find(
     (c) => c.category === category && connectionAvailable(get().entitlement, c),
   );
   if (!c)
@@ -322,7 +323,7 @@ export async function resolveApproval(
     throw new Error("This approval has already been resolved.");
   if (approve) {
     assertOnline();
-    const c = get().connections.find((c) => c.id === a.connectionId);
+    const c = contextConnections(get()).find((c) => c.id === a.connectionId);
     if (!c || !connectionAvailable(get().entitlement, c))
       throw new Error(
         "This connection is unavailable under your current plan. Reconnect or restore access.",
