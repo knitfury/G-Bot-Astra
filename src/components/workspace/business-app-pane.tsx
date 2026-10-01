@@ -1,4 +1,5 @@
 "use client";
+import { contextConnections } from "@/lib/connections";
 import { BusinessSnapshotPane } from "./business-snapshot";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -91,14 +92,14 @@ function Records({ connection }: { connection: MCPConnection }) {
             )}
             <div className="grow">
               <div className="row between">
-                <strong>
+                <strong className={connection.category === "Email" || connection.category === "Inventory" ? "context-content" : undefined}>
                   {connection.category === "Email" ? r.customer : r.title}
                 </strong>
                 {connection.category === "Email" && (
                   <span className="unread-dot" />
                 )}
               </div>
-              <p>{connection.category === "Email" ? r.title : r.subtitle}</p>
+              <p className={connection.category === "Email" || connection.category === "Inventory" ? "context-content" : undefined}>{connection.category === "Email" ? r.title : r.subtitle}</p>
               <span>
                 {connection.category === "Inventory"
                   ? `${r.metadata.stock} in stock`
@@ -141,8 +142,8 @@ function RecordDetail({ record: r }: { record: BusinessRecord }) {
               className={`product-drawing product-${r.metadata.SKU.split("-")[0].toLowerCase()}`}
             />
           </div>
-          <h3>{r.title}</h3>
-          <p className="tiny">{r.metadata.SKU} · Sand finish</p>
+          <h3 className="context-content">{r.title}</h3>
+          <p className="tiny context-content">{r.metadata.SKU} · Sand finish</p>
           <div className="stock-number">
             {r.metadata.stock}
             <span>units available</span>
@@ -167,11 +168,11 @@ function RecordDetail({ record: r }: { record: BusinessRecord }) {
                 .join("")}
             </span>
             <div>
-              <strong>{r.customer}</strong>
+              <strong className={r.category === "Email" ? "context-content" : undefined}>{r.customer}</strong>
               <p>{r.metadata.email}</p>
             </div>
           </div>
-          <p className="record-body">{r.body}</p>
+          <p className={`record-body ${r.category === "Email" ? "context-content" : ""}`}>{r.body}</p>
           <div className="detail-pairs">
             <span>Customer</span>
             <strong>{r.company}</strong>
@@ -202,10 +203,10 @@ export function BusinessAppPane({
   const [menu, setMenu] = useState(false),
     [refresh, setRefresh] = useState(0);
   if (!data) return null;
-  const connections = data.connections.filter((c) =>
+  const connections = contextConnections(data).filter((c) =>
     connectionAvailable(data.entitlement, c),
   );
-  const selected = data.connections.find(
+  const selected = contextConnections(data).find(
     (c) => c.id === pane.selectedConnectionId,
   );
   const connection =

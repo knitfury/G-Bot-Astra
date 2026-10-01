@@ -5,15 +5,15 @@ export const PLANS = {
   free: { name: "Free", monthly: 0, annual: 0, connections: 1, devices: 1 },
   starter: {
     name: "Starter",
-    monthly: 14,
-    annual: 140,
+    monthly: 6,
+    annual: 60,
     connections: 5,
     devices: 2,
   },
   business: {
     name: "Business",
-    monthly: 29,
-    annual: 290,
+    monthly: 9,
+    annual: 90,
     connections: 8,
     devices: 3,
   },
@@ -134,8 +134,9 @@ export function effectivePlan(
 export function enforceConnectionLimit<
   T extends { slot: number; enabled: boolean },
 >(connections: T[], plan: Plan): T[] {
+  let active = 0;
   return connections.map((c) => ({
     ...c,
-    enabled: c.enabled && c.slot < PLANS[plan].connections,
+    enabled: c.enabled && ++active <= PLANS[plan].connections,
   }));
 }

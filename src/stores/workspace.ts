@@ -1,4 +1,5 @@
 "use client";
+import { demoStorage } from "@/lib/demo-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ThemeColor, Appearance, WorkspacePane } from "@/types/domain";
@@ -61,15 +62,15 @@ export const useWorkspace = create<WorkspaceState>()(
         getItem: (name) =>
           isDesktop()
             ? desktopCall("desktop.readPreferences")
-            : localStorage.getItem(name),
+            : demoStorage.getItem(name),
         setItem: (name, value) =>
           isDesktop()
             ? desktopCall("desktop.savePreferences", value)
-            : localStorage.setItem(name, value),
+            : demoStorage.setItem(name, value),
         removeItem: (name) =>
           isDesktop()
             ? desktopCall("desktop.savePreferences", null)
-            : localStorage.removeItem(name),
+            : demoStorage.removeItem(name),
       })),
       migrate: (persisted) => {
         const { theme: _legacy, ...rest } = (persisted ?? {}) as Record<
@@ -80,9 +81,42 @@ export const useWorkspace = create<WorkspaceState>()(
       },
       merge: (persisted, current) => ({
         ...current,
-        ...(persisted as object),
+        ...safeWorkspace(persisted),
         ...resolveTheme(persisted),
       }),
     },
   ),
 );
+
+function safeWorkspace(value: unknown): Partial<WorkspaceState> {
+  if (!value || typeof value !== "object") return {};
+  const v = value as Partial<WorkspaceState>,
+    out: Partial<WorkspaceState> = {};
+  if (typeof v.reducedMotion === "boolean") out.reducedMotion = v.reducedMotion;
+  for (const key of ["conversationId", "model"] as const)
+    if (typeof v[key] === "string") out[key] = v[key];
+  if (v.drafts && typeof v.drafts === "object")
+    out.drafts = Object.fromEntries(
+      Object.entries(v.drafts).filter(([, draft]) => typeof draft === "string"),
+    );
+  for (const side of ["left", "right"] as const) {
+    const p = v[side];
+    if (p && typeof p === "object")
+      out[side] = {
+        side,
+        enabled: typeof p.enabled === "boolean" ? p.enabled : true,
+        collapsed: p.collapsed === true,
+        width:
+          typeof p.width === "number" && Number.isFinite(p.width)
+            ? Math.max(240, Math.min(360, p.width))
+            : side === "left"
+              ? 280
+              : 285,
+        selectedConnectionId:
+          typeof p.selectedConnectionId === "string"
+            ? p.selectedConnectionId
+            : "",
+      };
+  }
+  return out;
+}

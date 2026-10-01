@@ -32,7 +32,7 @@ export type Calls = GroupCalls & {
   "desktop.refreshLicense": () => Promise<unknown>;
   "desktop.openAccount": () => Promise<void>;
   "desktop.catalog": () => Promise<{catalog:import("../../production/model").Catalog|null;cached:boolean;message:string}>;
-  "desktop.data": (action:"usage"|"clear-cache"|"clear-activity"|"backup"|"restore"|"json"|"markdown",password:string) => Promise<{message?:string;bytes?:number;freeBytes?:number;lowDisk?:boolean;cancelled?:boolean}>;
+  "desktop.data": (action:"audit"|"audit-retention"|"usage"|"clear-cache"|"clear-activity"|"backup"|"restore"|"json"|"markdown",password:string) => Promise<{message?:string;bytes?:number;freeBytes?:number;lowDisk?:boolean;cancelled?:boolean}>;
   "desktop.removeAttachment": (id: string) => Promise<void>;
   "desktop.retention": (days:0|30|90|180) => Promise<void>;
   "desktop.openDemo": () => Promise<void>;
@@ -53,5 +53,6 @@ export interface DesktopBridge {
 declare global {
   interface Window {
     gbot?: DesktopBridge;
+    gbotDemo?: { getItem(name: string): string | null; setItem(name: string, value: string | null): Promise<void> };
   }
 }

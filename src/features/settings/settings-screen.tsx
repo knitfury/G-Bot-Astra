@@ -286,7 +286,7 @@ export function SettingsScreen() {
               <p>
                 {tab === "AI providers"
                   ? "Manage multiple providers, test connections, and choose your models."
-                  : "Manage eight connection slots, inspect tools, and review permissions."}
+                  : "Manage saved connections, inspect tools, and review permissions."}
               </p>
               <Button asChild>
                 <Link
@@ -403,14 +403,10 @@ export function SettingsScreen() {
                   Next sign-in failure
                   <select
                     value={data.diagnostics.authFailure}
-                    onChange={(e) =>
-                      run(() =>
-                        services.diagnostics.set({
-                          authFailure: e.target
-                            .value as Diagnostics["authFailure"],
-                        }),
-                      )
-                    }
+                    onChange={(e) => {
+                      const authFailure = e.currentTarget.value as Diagnostics["authFailure"];
+                      run(() => services.diagnostics.set({ authFailure }));
+                    }}
                   >
                     <option value="none">None</option>
                     <option value="credentials">Invalid credentials</option>

@@ -1,3 +1,5 @@
+import { connectionAvailable } from "../src/lib/entitlements";
+import { validateRouter } from "../src/lib/providers";
 import {
   app,
   BrowserWindow,
@@ -232,6 +234,7 @@ async function boot() {
     disconnect: (id: string) => mcp.disconnect(id),
     call: async (...args: Parameters<typeof mcp.call>) => {
       await identity.ensure();
+      if (!connectionAvailable(runtime.db.entitlement, args[0]) || !args[1].enabled) throw new Error("Connection or tool permission is no longer active.");
       await catalog.assertAllowed(args[0].url);
       return mcp.call(...args);
     },
@@ -248,6 +251,7 @@ async function boot() {
     {
       generate: async (...args: Parameters<typeof inference.generate>) => {
         await identity.ensure();
+        validateRouter(args[0], runtime.db.entitlement);
         return inference.generate(...args);
       },
     },
@@ -267,6 +271,28 @@ async function boot() {
     vault,
   );
   let preferences = await prefs.read();
+  const demoStore = new EncryptedStore<Record<string, string>>(
+    join(app.getPath("userData"), "demo-v1"), "demo.json", () => ({}), stringMap, vault,
+  );
+  const demoData = await demoStore.read();
+  const demoKey = (key: unknown): key is string =>
+    key === "gbot-demo-v1" || key === "gbot-workspace-v1";
+  const trustedDemo = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) =>
+    !!window && !window.isDestroyed() && demoMode && !!event.senderFrame &&
+    trustedSender(event.sender.id, window.webContents.id, event.senderFrame.url, origin,
+      event.senderFrame === event.sender.mainFrame);
+  ipcMain.on("gbot:demo-read", (event, key: unknown) => {
+    try { event.returnValue = trustedDemo(event) && demoKey(key) ? demoData[key] ?? null : null; }
+    catch { event.returnValue = null; }
+  });
+  ipcMain.handle("gbot:demo-write", async (event, key: unknown, value: unknown) => {
+    if (!trustedDemo(event) || !demoKey(key) ||
+      (value !== null && (typeof value !== "string" || value.length > 20_000_000)))
+      throw new Error("Invalid Demo storage request");
+    if (value === null) delete demoData[key];
+    else { JSON.parse(value as string); demoData[key] = value as string; }
+    await demoStore.write(demoData);
+  });
   autoUpdater.allowDowngrade = false;
   autoUpdater.allowPrerelease = false;
   autoUpdater.autoDownload = false;
@@ -344,9 +370,17 @@ async function boot() {
       event.preventDefault(),
     );
     window.once("ready-to-show", () => window?.show());
-    await window.loadURL(
-      origin + (demoMode ? "/demo" : runtime.db.user ? "/workspace" : "/"),
-    );
+    try {
+      await window.loadURL(
+        origin + (demoMode ? "/demo" : runtime.db.user ? "/workspace" : "/"),
+      );
+    } catch (error) {
+      // A reload/new navigation cancels the previous load with ERR_ABORTED.
+      // Destroying a loading window can also report ERR_FAILED. Neither is a
+      // startup failure during an intentional quit; a modal would block exit.
+      if (!shuttingDown && (error as { code?: string })?.code !== "ERR_ABORTED")
+        throw error;
+    }
   };
   session.defaultSession.setPermissionRequestHandler(
     (_wc, _permission, callback) => callback(false),
@@ -394,13 +428,15 @@ async function boot() {
           value = await runtime.services.snapshot();
         else if (request.operation === "desktop.catalog")
           value = await catalog.get();
-        else if (request.operation === "desktop.data")
+        else if (request.operation === "desktop.data") {
+          if (["audit", "audit-retention"].includes(a[0] as string)) await identity.ensure();
           value = await nativeData(
             runtime,
             directory,
             a[0] as string,
             a[1] as string,
           );
+        }
         else if (request.operation === "desktop.removeAttachment")
           value = runtime.attachments.remove(a[0] as string);
         else if (request.operation === "desktop.retention")
@@ -579,20 +615,23 @@ async function boot() {
       },
     ]),
   );
-  await createWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
-  });
+  // A visible/interactive renderer does not imply loadURL() has settled.
+  // Install shutdown handling before navigation can be cancelled by a quit.
   app.on("before-quit", (event) => {
     if (shuttingDown) return;
     event.preventDefault();
     shuttingDown = true;
     runtime.engine.stopAll();
-    void runtime.save().finally(() => {
+    void Promise.all([runtime.save(), demoStore.write(demoData)]).finally(() => {
       server.close();
       app.quit();
     });
   });
+  app.on("activate", () => {
+    if (!shuttingDown && BrowserWindow.getAllWindows().length === 0)
+      void createWindow();
+  });
+  await createWindow();
 }
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

@@ -13,3 +13,10 @@ const api: DesktopBridge = {
 if (ipcRenderer.sendSync("gbot:context") === true) {
   contextBridge.exposeInMainWorld("gbot", Object.freeze(api));
 }
+
+else {
+  contextBridge.exposeInMainWorld("gbotDemo", Object.freeze({
+    getItem: (name: string) => ipcRenderer.sendSync("gbot:demo-read", name),
+    setItem: (name: string, value: string | null) => ipcRenderer.invoke("gbot:demo-write", name, value),
+  }));
+}

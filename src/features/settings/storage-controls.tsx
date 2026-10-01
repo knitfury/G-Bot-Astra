@@ -52,16 +52,10 @@ export function StorageControls() {
         Keep conversation history
         <select
           value={data?.preferences.historyRetention ?? 0}
-          onChange={(e) =>
-            void action
-              .mutateAsync(() =>
-                desktopCall(
-                  "desktop.retention",
-                  Number(e.target.value) as 0 | 30 | 90 | 180,
-                ),
-              )
-              .catch(() => {})
-          }
+          onChange={(e) => {
+            const days = Number(e.currentTarget.value) as 0 | 30 | 90 | 180;
+            void action.mutateAsync(() => desktopCall("desktop.retention", days)).catch(() => {});
+          }}
         >
           <option value={0}>Until I delete it</option>
           <option value={30}>30 days</option>

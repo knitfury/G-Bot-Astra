@@ -1,3 +1,4 @@
+import { isRouter } from "../../src/lib/providers";
 import Ajv from "ajv";
 import { createHash, randomUUID } from "node:crypto";
 import type {
@@ -64,7 +65,13 @@ export class Orchestrator {
     approval: boolean,
     detail = "",
   ) {
+    const message = this.runs.get(cid)?.message;
     this.db().activity.unshift({
+      messageId: message?.id,
+      provider: message?.providerName,
+      model: message?.automaticRouting ? message.routedModels?.join(", ") || "Routed automatically" : message?.requestedModel,
+      retryCount: message?.retryCount ?? 0,
+      durationMs: message?.endedAt ? Math.max(0, Date.parse(message.endedAt) - Date.parse(message.createdAt)) : undefined,
       id: randomUUID(),
       timestamp: stamp(),
       actor: "G-Bot",
@@ -292,6 +299,7 @@ export class Orchestrator {
       await this.persist();
       return true;
     } catch (e) {
+      record.endedAt = stamp();
       record.status = "failed";
       record.error = safeError(e).message;
       if (approved) {
@@ -340,6 +348,9 @@ export class Orchestrator {
             "Stopped at the 12-step reasoning limit. Start a narrower request.",
           );
         const config = await this.provider(run.model);
+        run.message.providerName = config.name;
+        run.message.requestedModel = config.model;
+        run.message.automaticRouting = isRouter(config.type);
         const tools = this.available()
           .slice(0, 100)
           .map((x) => ({
@@ -358,6 +369,7 @@ export class Orchestrator {
             this.notify();
           },
         );
+        if (run.message.automaticRouting && result.model && result.model !== config.model && !["auto", "openrouter/auto"].includes(result.model)) run.message.routedModels = [...new Set([...(run.message.routedModels ?? []), result.model])];
         run.turns.push({
           role: "assistant",
           text: result.text,
@@ -365,6 +377,8 @@ export class Orchestrator {
         });
         if (!result.calls.length) {
           run.message.status = "completed";
+          run.message.endedAt = stamp();
+          this.audit(run.cid, "", "", "AI execution completed", "completed", false);
           this.runs.delete(run.cid);
           return;
         }
@@ -375,6 +389,8 @@ export class Orchestrator {
       const error = safeError(e);
       run.retryContent = checkpoint;
       run.message.status = error.code === "CANCELLED" ? "cancelled" : "failed";
+      run.message.endedAt = stamp();
+      this.audit(run.cid, "", "", "AI execution interrupted", run.message.status, false, error.message);
       run.message.content += `\n\n${error.message}`;
     } finally {
       run.busy = false;
@@ -495,6 +511,7 @@ export class Orchestrator {
         "An external action has an uncertain outcome. Verify it in the business app before requesting another action.",
       );
     if (run.retryContent !== undefined) run.message.content = run.retryContent;
+    run.message.retryCount = (run.message.retryCount ?? 0) + 1;
     run.retryContent = undefined;
     run.controller = new AbortController();
     await this.advance(run);

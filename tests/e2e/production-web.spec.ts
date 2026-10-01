@@ -12,7 +12,7 @@ test("public product, account and admin surfaces work without claiming unconfigu
     );
     await page.locator('html[data-app-ready="true"]').waitFor();
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByText("€14", { exact: false }).first()).toBeVisible();
+    await expect(page.getByText("$6", { exact: false }).first()).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,

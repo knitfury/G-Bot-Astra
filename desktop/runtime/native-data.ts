@@ -1,3 +1,5 @@
+import { exportAudit } from "../../src/lib/audit";
+import { auditAvailable } from "../../src/lib/entitlements";
 import { dialog } from "electron";
 import {
   stat,
@@ -20,6 +22,41 @@ export async function nativeData(
   action: string,
   password: string,
 ) {
+  if (action === "audit") {
+    const content = exportAudit(runtime.db);
+    const file = await dialog.showSaveDialog({
+      title: "Export local Activity & Audit",
+      defaultPath: "g-bot-audit.json",
+    });
+    if (file.canceled || !file.filePath) return { cancelled: true };
+    await writeFile(file.filePath, content, { mode: 0o600 });
+    return {
+      message:
+        "Local audit exported. It may contain private business metadata; share carefully.",
+    };
+  }
+  if (action === "audit-retention") {
+    if (!auditAvailable(runtime.db.entitlement))
+      throw Error("Advanced Activity & Audit requires Business.");
+    const days = Number(password);
+    if (![0, 30, 90, 180].includes(days))
+      throw Error("Invalid retention period.");
+    if (days) {
+      const choice = await dialog.showMessageBox({
+        type: "warning",
+        buttons: ["Cancel", "Apply retention"],
+        defaultId: 0,
+        cancelId: 0,
+        message: `Delete Activity older than ${days} days?`,
+        detail:
+          "Conversation history and approval records remain. Export your audit first if you need to keep these events.",
+      });
+      if (choice.response !== 1) return { cancelled: true };
+    }
+    runtime.db.preferences.activityRetention = days as 0 | 30 | 90 | 180;
+    await runtime.save();
+    return { message: "Activity retention updated." };
+  }
   if (action === "usage") {
     const files = await readdir(directory);
     let bytes = 0;

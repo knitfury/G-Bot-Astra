@@ -1,4 +1,7 @@
 "use client";
+import { contextConnections } from "@/lib/connections";
+import { isRouter } from "@/lib/providers";
+import { routersAvailable } from "@/lib/entitlements";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -72,7 +75,11 @@ export function ModelSelector() {
     setModel = useWorkspace((s) => s.setModel);
   const models =
     data?.providers
-      .filter((p) => p.status === "connected")
+      .filter(
+        (p) =>
+          p.status === "connected" &&
+          (!isRouter(p.type) || routersAvailable(data!.entitlement)),
+      )
       .flatMap((p) =>
         p.models
           .filter((m) => m.enabled)
@@ -119,7 +126,10 @@ export function ChatComposer({
   const file = useRef<HTMLInputElement>(null),
     image = useRef<HTMLInputElement>(null);
   const available = data?.providers.some(
-    (p) => p.status === "connected" && p.models.some((m) => m.enabled),
+    (p) =>
+      p.status === "connected" &&
+      (!isRouter(p.type) || routersAvailable(data!.entitlement)) &&
+      p.models.some((m) => m.enabled),
   );
   async function files(list: FileList | null) {
     if (!list) return;
@@ -222,7 +232,10 @@ export function ChatComposer({
                 attachment={a}
                 onRemove={() => {
                   setAttachments((list) => list.filter((x) => x.id !== a.id));
-                  if(isDesktop())void desktopCall("desktop.removeAttachment",a.id).catch(()=>{});
+                  if (isDesktop())
+                    void desktopCall("desktop.removeAttachment", a.id).catch(
+                      () => {},
+                    );
                 }}
               />
             ))}
@@ -326,8 +339,8 @@ export function ChatComposer({
         </div>
         {context && (
           <div className="composer-context">
-            {data?.connections
-              .filter((c) => connectionAvailable(data.entitlement, c))
+            {(data ? contextConnections(data) : [])
+              .filter((c) => data && connectionAvailable(data.entitlement, c))
               .map((c) => (
                 <span className="row" key={c.id}>
                   <AppIcon category={c.category} size={13} />
@@ -342,7 +355,11 @@ export function ChatComposer({
       {error && <ErrorState message={error} />}
       <p className="composer-caption">
         Your apps provide context. You stay in control.{" "}
-        <span>{data?.runtime ? "Check important details before acting." : "Simulated responses · check important details."}</span>
+        <span>
+          {data?.runtime
+            ? "Check important details before acting."
+            : "Simulated responses · check important details."}
+        </span>
       </p>
       <input
         className="sr-only"

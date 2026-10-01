@@ -117,8 +117,8 @@ export function BusinessSnapshotPane({
                 aria-pressed={item?.id === i.id}
                 onClick={() => setSelected(i.id)}
               >
-                <strong title={i.title}>{i.title}</strong>
-                <p>{i.subtitle}</p>
+                <strong className={snapshot.kind === "inventory" ? "context-content" : undefined} title={i.title}>{i.title}</strong>
+                <p className={snapshot.kind === "mail" || snapshot.kind === "inventory" ? "context-content" : undefined}>{i.subtitle}</p>
                 {i.fields.Stock !== undefined ? (
                   <Badge>{i.fields.Stock} in stock</Badge>
                 ) : (
@@ -134,13 +134,13 @@ export function BusinessSnapshotPane({
           className="snapshot-detail"
           aria-label="Selected business record"
         >
-          <h3>{item.title}</h3>
-          <p className="record-body">{item.preview}</p>
+          <h3 className={snapshot.kind === "inventory" ? "context-content" : undefined}>{item.title}</h3>
+          <p className={`record-body ${snapshot.kind === "mail" || snapshot.kind === "inventory" ? "context-content" : ""}`}>{item.preview}</p>
           <dl>
             {Object.entries(item.fields).map(([k, v]) => (
               <div key={k}>
                 <dt className="muted">{k}</dt>
-                <dd title={v}>{v}</dd>
+                <dd className={snapshot.kind === "mail" && k === "Sender" ? "context-content" : undefined} title={v}>{v}</dd>
               </div>
             ))}
           </dl>

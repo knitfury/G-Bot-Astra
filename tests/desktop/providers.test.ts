@@ -235,3 +235,47 @@ test("truncated streams and provider timeouts are recoverable domain errors", as
     clearTimeout(keep);
   }
 });
+
+test("routers send only Auto using OpenAI protocol and report returned model without invention", async () => {
+  for (const type of ["OpenRouter", "OmniRoute"] as const)
+    for (const streaming of [false, true]) {
+      let body: Record<string, unknown> = {};
+      let endpoint = "";
+      const adapter = new HTTPInference(async (url, init) => {
+        endpoint = String(url);
+        body = JSON.parse(String(init?.body));
+        return streaming
+          ? new Response(
+              'data: {"model":"vendor/selected-model","choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n',
+              { headers: { "content-type": "text/event-stream" } },
+            )
+          : Response.json({
+              model: "vendor/selected-model",
+              choices: [{ message: { content: "OK" } }],
+            });
+      });
+      const result = await run(adapter, {
+        ...input,
+        type,
+        model: type === "OpenRouter" ? "openrouter/auto" : "auto",
+      });
+      assert.equal(
+        body.model,
+        type === "OpenRouter" ? "openrouter/auto" : "auto",
+      );
+      assert.match(endpoint, /\/chat\/completions$/);
+      assert.equal(
+        body.tools,
+        undefined,
+        "no tools are enabled merely by choosing a router",
+      );
+      assert.equal(result.model, "vendor/selected-model");
+    }
+  const adapter = new HTTPInference(async () =>
+    Response.json({ choices: [{ message: { content: "OK" } }] }),
+  );
+  assert.equal(
+    (await run(adapter, { ...input, type: "OmniRoute", model: "auto" })).model,
+    undefined,
+  );
+});

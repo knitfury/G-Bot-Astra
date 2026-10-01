@@ -48,7 +48,9 @@ test("signup → entitlement → AI → business app → workspace", async ({
   await dialog.getByRole("button", { name: "Save provider" }).click();
   await expect(dialog).not.toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await page.getByRole("button", { name: "Connect app", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Add Connection", exact: true })
+    .click();
   await page.getByLabel("Connection name").fill("Business Mail");
   await page.getByRole("button", { name: "Continue to permissions" }).click();
   await page.getByLabel("Allow this connection to discover its tools.").check();
@@ -61,8 +63,8 @@ test("signup → entitlement → AI → business app → workspace", async ({
     "demo-model",
   );
   await page.goto("/connections");
-  await expect(page.locator(".connection-card")).toHaveCount(8);
-  await expect(page.locator(".connection-card.locked")).toHaveCount(7);
+  await expect(page.locator(".connection-card")).toHaveCount(1);
+  await expect(page.locator(".connection-summary")).toContainText("1 of 1");
 });
 test("signature scenario, edited approval, feedback, history and activity", async ({
   page,
@@ -163,13 +165,21 @@ test("downgrade retains eight configurations and limits execution", async ({
   page,
 }, info) => {
   await demo(page);
+  await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem("gbot-demo-v1")!);
+    db.connections = db.demoConnections.map((c: object) => ({ ...c, userConfigured: true }));
+    db.demoConnections = [];
+    localStorage.setItem("gbot-demo-v1", JSON.stringify(db));
+  });
   await page.goto("/account");
   await page.getByRole("button", { name: "Switch to starter" }).click();
   await page.getByRole("button", { name: "Confirm demo plan" }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.goto("/connections");
   await expect(page.locator(".connection-card")).toHaveCount(8);
-  await expect(page.locator(".connection-card.locked")).toHaveCount(3);
+  await expect(
+    page.locator(".connection-card").filter({ hasText: "inactive" }),
+  ).toHaveCount(3);
   await page.screenshot({
     animations: "disabled",
     path: info.outputPath("starter-connections.png"),
@@ -179,13 +189,15 @@ test("downgrade retains eight configurations and limits execution", async ({
   await page.getByRole("button", { name: "Confirm demo plan" }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.goto("/connections");
-  await expect(page.locator(".connection-card.locked")).toHaveCount(7);
+  await expect(
+    page.locator(".connection-card").filter({ hasText: "inactive" }),
+  ).toHaveCount(7);
   await page.goto("/account");
   await page.getByRole("button", { name: "Switch to business" }).click();
   await page.getByRole("button", { name: "Confirm demo plan" }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.goto("/connections");
-  await expect(page.locator(".connection-card.locked")).toHaveCount(0);
+  await expect(page.locator(".connection-summary")).toContainText("1 of 8");
 });
 test("pane switching, resizing, persistence, G-Bot-only and narrow context", async ({
   page,

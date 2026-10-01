@@ -1,4 +1,6 @@
 "use client";
+import { isRouter } from "@/lib/providers";
+import { routersAvailable } from "@/lib/entitlements";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -71,7 +73,11 @@ export function GBotChat() {
   );
   const models =
     data?.providers
-      .filter((p) => p.status === "connected")
+      .filter(
+        (p) =>
+          p.status === "connected" &&
+          (!isRouter(p.type) || routersAvailable(data!.entitlement)),
+      )
       .flatMap((p) => p.models.filter((m) => m.enabled)) || [];
   const model =
     models.find((m) => m.id === modelPreference)?.id || models[0]?.id || "";
@@ -273,6 +279,23 @@ function MessageView({ message: m, cid }: { message: Message; cid: string }) {
               <AttachmentChip key={a.id} attachment={a} />
             ))}
           </div>
+        )}
+        {m.providerName && (
+          <details className="execution-timeline">
+            <summary>Execution Details</summary>
+            <p>
+              Provider: {m.providerName} ·{" "}
+              {m.automaticRouting
+                ? `Automatic model routing · ${m.routedModels?.join(", ") || "Routed automatically"}`
+                : m.requestedModel}
+            </p>
+            <p>
+              Retries: {m.retryCount ?? 0}
+              {m.endedAt
+                ? ` · Duration: ${Math.max(0, Date.parse(m.endedAt) - Date.parse(m.createdAt)) / 1000}s`
+                : ""}
+            </p>
+          </details>
         )}
         <ExecutionTimeline tools={m.tools} />
         {m.content && (

@@ -54,6 +54,15 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - run: node scripts/smoke-electron.mjs --packaged
       - uses: actions/upload-artifact@v4
+        if: matrix.os == 'windows-latest'
+        with:
+          name: G-Bot-Windows-owner-test
+          path: |
+            release/*.exe
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: desktop-review-${{ matrix.os }}

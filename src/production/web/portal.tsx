@@ -1,4 +1,5 @@
 "use client";
+import { PlanComparison } from "@/components/common/plan-comparison";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { accountClient, control, billingRedirect } from "./client";
@@ -346,15 +347,16 @@ export function Portal({ admin = false }: { admin?: boolean }) {
                     checked={annual}
                     onChange={(e) => setAnnual(e.target.checked)}
                   />
-                  Annual · 12 months for the price of 10
+                  Annual · USD annual billing
                 </label>
               </div>
+              <PlanComparison />
               <div className="plan-grid">
                 {Object.entries(PLANS).map(([id, p]) => (
                   <article className="panel stack" key={id}>
                     <span className="eyebrow">{p.name}</span>
                     <h3>
-                      €{annual ? p.annual : p.monthly}
+                      ${annual ? p.annual : p.monthly}
                       <small> / {annual ? "year" : "month"}</small>
                     </h3>
                     <p>

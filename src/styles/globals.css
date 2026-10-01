@@ -75,13 +75,14 @@
   --on-accent: #fff;
 }
 [data-appearance="dark"] {
-  --bg: #222526;
-  --surface: #2b2f30;
-  --surface-alt: #272a2b;
-  --soft: #373c3d;
-  --text: #f0f2ef;
-  --muted: #b0b8b4;
-  --line: #414849;
+  --bg: #202020;
+  --surface: #2b2b2b;
+  --surface-alt: #262626;
+  --soft: #363636;
+  --line: #454545;
+  --text: #f1f1f1;
+  --muted: #b8b8b8;
+
   --accent: #d6dfd9;
   --accent-hover: #edf3ef;
   --accent-soft: #3b4440;
@@ -96,13 +97,7 @@
   color-scheme: dark;
 }
 [data-color="purple"][data-appearance="dark"] {
-  --bg: #222329;
-  --surface: #2b2c34;
-  --surface-alt: #27282f;
-  --soft: #373841;
-  --text: #f0edf6;
-  --muted: #b5b2bf;
-  --line: #41414b;
+
   --accent: #c7b0f4;
   --accent-hover: #d8c4ff;
   --accent-soft: #3e344d;
@@ -117,52 +112,28 @@
   color-scheme: dark;
 }
 [data-color="orange"][data-appearance="dark"] {
-  --bg: #252321;
-  --surface: #302c29;
-  --surface-alt: #2a2724;
-  --soft: #3b3530;
-  --text: #f5eee8;
-  --muted: #c2b5aa;
-  --line: #4a4139;
+
   --accent: #f0a17b;
   --accent-hover: #ffbb97;
   --accent-soft: #49352b;
   --on-accent: #302015;
 }
 [data-color="blue"][data-appearance="dark"] {
-  --bg: #22262c;
-  --surface: #2a3038;
-  --surface-alt: #252b32;
-  --soft: #343e49;
-  --text: #edf2f8;
-  --muted: #afbecf;
-  --line: #414e5d;
-  --accent: #96bffc;
-  --accent-hover: #b6d3ff;
+
+  --accent: #82afff;
+  --accent-hover: #91b8ff;
   --accent-soft: #2c3e57;
   --on-accent: #182a42;
 }
 [data-color="green"][data-appearance="dark"] {
-  --bg: #222723;
-  --surface: #2b322d;
-  --surface-alt: #262c28;
-  --soft: #354038;
-  --text: #eef4ed;
-  --muted: #b4c3b3;
-  --line: #445148;
-  --accent: #a0d4ac;
-  --accent-hover: #bde8c7;
+
+  --accent: #76cf82;
+  --accent-hover: #98e3a1;
   --accent-soft: #304535;
   --on-accent: #1b3020;
 }
 [data-color="neutral"][data-appearance="dark"] {
-  --bg: #222222;
-  --surface: #2d2d2d;
-  --surface-alt: #282828;
-  --soft: #383838;
-  --text: #f1f1f1;
-  --muted: #b7b7b7;
-  --line: #464646;
+
   --accent: #dddddd;
   --accent-hover: #f1f1f1;
   --accent-soft: #414141;
