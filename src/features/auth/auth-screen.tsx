@@ -14,6 +14,7 @@ import { useAction } from "@/hooks/use-services";
 import { useWorkspace } from "@/stores/workspace";
 import {
   Logo,
+  Loading,
   AppIcon,
   Badge,
   ErrorState,
@@ -45,6 +46,8 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
     setConversation("");
     router.push("/workspace");
   }
+  // Do not expose a browser account link before detecting the native bridge.
+  if (!links.ready) return <Loading label="Opening G-Bot…" />;
   if (!desktop && mode !== "welcome") return <WebAccountRedirect />;
   if (desktop && !snapshot) return <div role="status">Opening G-Bot…</div>;
   if (desktop && snapshot?.runtime?.production && mode !== "welcome")

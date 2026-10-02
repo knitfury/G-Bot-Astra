@@ -7,9 +7,10 @@ import { Loading } from "@/components/common/ui";
 
 /** Native Demo has a restricted storage bridge, but deliberately no live bridge. */
 export function useAccountLinks() {
-  const [native, setNative] = useState(false);
+  const [native, setNative] = useState<boolean | null>(null);
   useEffect(() => setNative(isDesktop() || !!window.gbotDemo), []);
   return {
+    ready: native !== null,
     signin: native ? "/login?returnToApp=1" : "/portal",
     signup: native ? "/signup?returnToApp=1" : "/portal",
     exit: native ? "/?returnToApp=1" : "/",

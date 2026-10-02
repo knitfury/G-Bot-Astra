@@ -130,6 +130,10 @@ try {
   await page
     .getByRole("heading", { name: "Meet your new way to work." })
     .waitFor({ timeout: 60000 });
+  const signIn = page.getByRole("link", { name: "Sign in", exact: true });
+  await signIn.waitFor({ state: "visible" });
+  if ((await signIn.getAttribute("href")) !== "/login?returnToApp=1")
+    throw Error("Native account link was exposed before bridge detection");
   await page.getByRole("link", { name: "Sign in", exact: true }).click();
   await page.getByRole("heading", { name: "Welcome back" }).waitFor();
   for (const provider of ["Google", "Microsoft"]) {

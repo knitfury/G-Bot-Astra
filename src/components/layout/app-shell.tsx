@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (data && !data.user) router.replace("/");
   }, [data, router]);
-  if (!ready || !data?.user) return <Loading />;
+  if (!ready || !accountLinks.ready || !data?.user) return <Loading />;
   const active = data.connections.filter((c) =>
     connectionAvailable(data.entitlement, c),
   );
