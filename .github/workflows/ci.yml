@@ -49,17 +49,51 @@ jobs:
       - run: npm ci
       - run: npm run desktop:build
       - run: npm run test:electron
-      - run: npm run desktop:dist -- --publish never
+      - name: Package unconfigured smoke-test fixture
+        run: npm run desktop:dist -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - run: node scripts/smoke-electron.mjs --packaged
+      # Public repository variables only; never attach this job to release-signing.
+      # Keep the unconfigured packaged smoke fixture above unchanged.
+      - name: Package configured unsigned owner-test installer
+        if: vars.GBOT_OWNER_TEST_ENABLED == 'true'
+        shell: bash
+        run: |
+          node --import tsx scripts/validate-owner-test-config.ts
+          npm run desktop:build
+          node --import tsx scripts/validate-owner-test-config.ts --bundle
+          npx electron-builder --publish never --config.directories.output=release-owner-test
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_GBOT_ENVIRONMENT: ${{ vars.NEXT_PUBLIC_GBOT_ENVIRONMENT }}
+          GBOT_CONTROL_PLANE_URL: ${{ vars.GBOT_CONTROL_PLANE_URL }}
+          GBOT_LICENSE_PUBLIC_KEYS: ${{ vars.GBOT_LICENSE_PUBLIC_KEYS }}
+          GBOT_CATALOG_PUBLIC_KEYS: ${{ vars.GBOT_CATALOG_PUBLIC_KEYS }}
+          GBOT_UPDATE_PUBLIC_KEYS: ${{ vars.GBOT_UPDATE_PUBLIC_KEYS }}
+          GBOT_RELEASE_MANIFEST_URL: ${{ vars.GBOT_RELEASE_MANIFEST_URL }}
+          GBOT_SENTRY_DSN: ${{ vars.GBOT_SENTRY_DSN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Explain disabled owner-test artifact
+        if: vars.GBOT_OWNER_TEST_ENABLED != 'true'
+        run: node -e "console.log('::notice::Configured owner-test installer not produced. Set repository Actions variable GBOT_OWNER_TEST_ENABLED=true and the required public variables. Smoke-test fixtures are not account-test installers.')"
       - uses: actions/upload-artifact@v4
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && vars.GBOT_OWNER_TEST_ENABLED == 'true'
         with:
           name: G-Bot-Windows-owner-test
           path: |
-            release/*.exe
-            release/*.blockmap
+            release-owner-test/*.exe
+            release-owner-test/*.blockmap
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'macos-latest' && vars.GBOT_OWNER_TEST_ENABLED == 'true'
+        with:
+          name: G-Bot-macOS-owner-test
+          path: |
+            release-owner-test/*.dmg
+            release-owner-test/*.zip
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
