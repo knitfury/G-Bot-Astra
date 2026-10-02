@@ -156,7 +156,7 @@ for (const color of ["orange", "purple", "blue", "green", "neutral"])
       "onboarding",
     ]) {
       await page.goto(`/${route}`);
-      await expect(page).toHaveURL(/\/portal$/);
+      await expect(page).toHaveURL(new RegExp(`/${route}$`));
       await expect(page.locator("h1")).toBeVisible();
       await capture(route.replaceAll("/", "-"));
     }
