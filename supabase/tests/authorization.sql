@@ -12,6 +12,9 @@ do $$ begin
  begin perform public.current_plan('22222222-2222-4222-8222-222222222222');raise exception 'Privileged RPC exposed';exception when insufficient_privilege then null;end;
 end $$;
 reset role;
+do $$ begin
+ if public.current_plan('11111111-1111-4111-8111-111111111111')<>'free' then raise exception 'New account must remain Free before server reconciliation';end if;
+end $$;
 select public.issue_license('11111111-1111-4111-8111-111111111111','44444444-4444-4444-8444-444444444444','Test Windows','win32','1.0.0','33333333-3333-4333-8333-333333333333','test-1');
 do $$ begin
  begin perform public.issue_license('11111111-1111-4111-8111-111111111111','55555555-5555-4555-8555-555555555555','Other','darwin','1.0.0','33333333-3333-4333-8333-333333333333','test-1');raise exception 'Device limit bypass';exception when raise_exception then if sqlerrm<>'device_limit' then raise;end if;end;

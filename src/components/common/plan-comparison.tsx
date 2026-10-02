@@ -2,10 +2,10 @@ import { PLANS } from "@/production/model";
 export function PlanComparison() {
   const rows: [string, string, string, string][] = [
     [
-      "Price (USD)",
-      "$0",
-      `$${PLANS.starter.monthly}/month · $${PLANS.starter.annual}/year`,
-      "$9/month · $90/year",
+      "Price (EUR)",
+      "€0",
+      `€${PLANS.starter.monthly}/month · €${PLANS.starter.annual}/year`,
+      "€9/month · €90/year",
     ],
     ["Active MCP connections", "1", "5", "8"],
     ...[

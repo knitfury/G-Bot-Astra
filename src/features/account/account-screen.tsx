@@ -89,11 +89,11 @@ export function AccountScreen() {
   return (
     <div className="page">
       <PageHeading
-        eyebrow="YOUR WORKSPACE"
+        eyebrow="DEMO WORKSPACE"
         title="Account & plan"
-        description="A plan that fits your business. Room to grow when you need it."
+        description="Simulate plan changes with fictional data. This does not change your real account or subscription."
       >
-        <Badge tone="success">Account active</Badge>
+        <Badge>Demo account · simulated plan</Badge>
       </PageHeading>
       <div className="panel profile-panel">
         <div className="row">
@@ -116,7 +116,7 @@ export function AccountScreen() {
       </div>
       <div className="plan-overview">
         <div>
-          <span className="eyebrow">CURRENT PLAN</span>
+          <span className="eyebrow">SIMULATED PLAN</span>
           <h2 className="capitalize">
             {data.entitlement.plan}
             <Badge
@@ -138,7 +138,7 @@ export function AccountScreen() {
           </p>
         </div>
         <div>
-          <span className="eyebrow">RENEWAL</span>
+          <span className="eyebrow">SIMULATED RENEWAL</span>
           <p>
             {data.entitlement.plan === "free"
               ? "No renewal required"
@@ -164,8 +164,8 @@ export function AccountScreen() {
           >
             <span className="eyebrow">{p}</span>
             <strong>
-              ${PLANS[p].monthly}
-              <small>USD / month · ${PLANS[p].annual} / year</small>
+              €{PLANS[p].monthly}
+              <small>EUR / month · €{PLANS[p].annual} / year</small>
               {PLAN_LIMITS[p]}
               <small>active connection{p === "free" ? "" : "s"}</small>
             </strong>

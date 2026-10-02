@@ -9,6 +9,7 @@ test("cloud operations reject missing authentication before any privileged work"
     "account",
     "license",
     "checkout",
+    "billing",
     "admin-accounts",
     "admin-revoke",
     "admin-refund",

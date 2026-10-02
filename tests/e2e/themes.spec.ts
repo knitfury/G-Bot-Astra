@@ -23,7 +23,7 @@ for (const [legacy, color, appearance] of [
           }),
         );
     }, legacy);
-    await page.goto("/login");
+    await page.goto("/portal");
     await expect(page.locator("html")).toHaveAttribute("data-color", color);
     await expect(page.locator("html")).toHaveAttribute(
       "data-appearance",
@@ -116,6 +116,7 @@ for (const color of ["orange", "purple", "blue", "green", "neutral"])
     };
     for (const route of ["login", "signup"]) {
       await page.goto(`/${route}`);
+      await expect(page).toHaveURL(/\/portal$/);
       await expect(page.locator("h1")).toBeVisible();
       await capture(route);
     }
@@ -155,6 +156,7 @@ for (const color of ["orange", "purple", "blue", "green", "neutral"])
       "onboarding",
     ]) {
       await page.goto(`/${route}`);
+      await expect(page).toHaveURL(/\/portal$/);
       await expect(page.locator("h1")).toBeVisible();
       await capture(route.replaceAll("/", "-"));
     }

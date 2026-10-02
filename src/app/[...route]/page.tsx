@@ -1,3 +1,4 @@
+import { WorkspaceBoundary } from "@/features/auth/account-boundary";
 import { DemoEntry } from "@/features/auth/demo-entry";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
@@ -21,7 +22,12 @@ export default async function Page({
   const path = route.join("/");
   if (path === "login" || path === "signup") return <AuthScreen mode={path} />;
   if (path === "demo") return <DemoEntry />;
-  if (path === "onboarding") return <Onboarding />;
+  if (path === "onboarding")
+    return (
+      <WorkspaceBoundary>
+        <Onboarding />
+      </WorkspaceBoundary>
+    );
   let screen: React.ReactNode;
   if (path === "workspace") screen = <WorkspaceLayout />;
   else if (path === "connections") screen = <ConnectionManager />;
@@ -32,5 +38,9 @@ export default async function Page({
   else if (path === "account") screen = <AccountScreen />;
   else if (path === "settings") screen = <SettingsScreen />;
   else notFound();
-  return <AppShell>{screen}</AppShell>;
+  return (
+    <WorkspaceBoundary>
+      <AppShell>{screen}</AppShell>
+    </WorkspaceBoundary>
+  );
 }

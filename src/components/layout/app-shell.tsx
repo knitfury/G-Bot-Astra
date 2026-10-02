@@ -1,4 +1,5 @@
 "use client";
+import { useAccountLinks } from "@/features/auth/account-boundary";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -26,6 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname(),
     router = useRouter(),
     { data } = useSnapshot();
+  const accountLinks = useAccountLinks();
   const setConversation = useWorkspace((s) => s.setConversation);
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
@@ -91,9 +93,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="demo-gateway row wrap between">
             <span>Explore freely. Your real workspace stays separate.</span>
             <div className="row wrap">
-              <a href="/signup?returnToApp=1">Create your workspace</a>
-              <a href="/login?returnToApp=1">Sign in</a>
-              <a href="/?returnToApp=1">Exit Demo</a>
+              <a href={accountLinks.signup}>Create your workspace</a>
+              <a href={accountLinks.signin}>Sign in</a>
+              <a href={accountLinks.exit}>Exit Demo</a>
             </div>
           </div>
         )}
@@ -104,7 +106,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
             <span className="top-divider" />
             <span className="workspace-name">My workspace</span>
-            <Badge>{data.entitlement.plan}</Badge>
+            <Badge>
+              {data.runtime
+                ? data.entitlement.plan
+                : `Demo ${data.entitlement.plan}`}
+            </Badge>
           </div>
           <div className="row">
             <span className="health-summary">

@@ -38,6 +38,8 @@ export function hydrate() {
       const parsed = JSON.parse(saved) as Database;
       if (parsed.schema === 1) {
         db = parsed;
+        // Browser Demo state can never claim native production runtime authority.
+        delete db.runtime;
         db.preferences = normalizePreferences(db.preferences);
         db.diagnostics = normalizeDiagnostics(db.diagnostics);
         migrateDemoConnections(db);

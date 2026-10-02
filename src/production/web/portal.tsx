@@ -347,7 +347,7 @@ export function Portal({ admin = false }: { admin?: boolean }) {
                     checked={annual}
                     onChange={(e) => setAnnual(e.target.checked)}
                   />
-                  Annual · USD annual billing
+                  Annual · EUR annual billing
                 </label>
               </div>
               <PlanComparison />
@@ -356,7 +356,7 @@ export function Portal({ admin = false }: { admin?: boolean }) {
                   <article className="panel stack" key={id}>
                     <span className="eyebrow">{p.name}</span>
                     <h3>
-                      ${annual ? p.annual : p.monthly}
+                      €{annual ? p.annual : p.monthly}
                       <small> / {annual ? "year" : "month"}</small>
                     </h3>
                     <p>
