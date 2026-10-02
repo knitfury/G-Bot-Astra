@@ -22,18 +22,25 @@ async function noOverflow(page: Page) {
     ),
   ).toBeTruthy();
 }
-test("signup → entitlement → AI → business app → workspace", async ({
+test("explicit Demo onboarding → entitlement → AI → business app → workspace", async ({
   page,
 }) => {
-  await page.goto("/signup");
-  await page.getByLabel("Your name").fill("Jordan Ellis");
-  await page.getByLabel("Email address").fill("jordan@studio.example");
-  await page.getByLabel("Password", { exact: true }).fill("demo-pass-123");
-  await page.getByRole("checkbox").check();
-  await page
-    .getByRole("button", { name: "Create account", exact: true })
-    .click();
-  await expect(page).toHaveURL(/onboarding/);
+  await demo(page);
+  await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem("gbot-demo-v1")!);
+    db.providers = [];
+    db.demoConnections = [];
+    db.entitlement = {
+      ...db.entitlement,
+      plan: "free",
+      maxActiveConnections: 1,
+    };
+    localStorage.setItem("gbot-demo-v1", JSON.stringify(db));
+  });
+  await page.goto("/onboarding");
+  await expect(
+    page.getByText(/Demo Mode · Fictional data · No live actions · Setup/),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "OpenAI", exact: true }).click();
   const dialog = page.getByRole("dialog");
@@ -167,7 +174,10 @@ test("downgrade retains eight configurations and limits execution", async ({
   await demo(page);
   await page.evaluate(() => {
     const db = JSON.parse(localStorage.getItem("gbot-demo-v1")!);
-    db.connections = db.demoConnections.map((c: object) => ({ ...c, userConfigured: true }));
+    db.connections = db.demoConnections.map((c: object) => ({
+      ...c,
+      userConfigured: true,
+    }));
     db.demoConnections = [];
     localStorage.setItem("gbot-demo-v1", JSON.stringify(db));
   });

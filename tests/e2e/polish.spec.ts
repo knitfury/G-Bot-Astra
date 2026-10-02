@@ -8,8 +8,8 @@ test("plan comparisons, router Auto choices, Free lock and Business audit coexis
   ).toBeVisible();
   await page.goto("/account");
   const comparison = page.locator(".plan-comparison");
-  await expect(comparison).toContainText("$6/month · $60/year");
-  await expect(comparison).toContainText("$9/month · $90/year");
+  await expect(comparison).toContainText("€6/month · €60/year");
+  await expect(comparison).toContainText("€9/month · €90/year");
   await page.goto("/providers");
   await page.getByRole("button", { name: "OpenRouter", exact: true }).click();
   const dialog = page.getByRole("dialog");

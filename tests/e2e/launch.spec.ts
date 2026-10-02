@@ -61,7 +61,27 @@ test("production Welcome, distinct auth routes, safe OAuth, session routing and 
       subscribe: () => () => {},
     };
   });
-  await page.goto("/");
+  // Hold hydration so the pre-bridge render cannot expose a browser portal link.
+  let resumeHydration!: () => void;
+  const hydration = new Promise<void>((resolve) => {
+    resumeHydration = resolve;
+  });
+  await page.route("**/_next/static/**/*.js", async (route) => {
+    await hydration;
+    await route.continue();
+  });
+  try {
+    await page.goto("/", { waitUntil: "commit" });
+    await expect(page.getByRole("status")).toContainText("Opening G-Bot");
+    await expect(
+      page.getByRole("link", { name: "Sign in", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "Create account", exact: true }),
+    ).toHaveCount(0);
+  } finally {
+    resumeHydration();
+  }
   await expect(
     page.getByRole("heading", { name: "Meet your new way to work." }),
   ).toBeVisible();
@@ -69,6 +89,9 @@ test("production Welcome, distinct auth routes, safe OAuth, session routing and 
     page.getByRole("heading", { name: /One conversation/ }),
   ).toBeVisible();
   await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Sign in", exact: true }),
+  ).toHaveAttribute("href", "/login?returnToApp=1");
   await page.getByRole("link", { name: "Sign in", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Welcome back" }),

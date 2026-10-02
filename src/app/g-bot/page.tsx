@@ -130,12 +130,12 @@ export default function Product() {
             <article className="panel stack" key={id}>
               <span className="eyebrow">{p.name}</span>
               <h3>
-                ${p.monthly}
+                €{p.monthly}
                 <small> / month</small>
               </h3>
               <p>
                 {p.annual
-                  ? `Or $${p.annual}/year · USD annual billing`
+                  ? `Or €${p.annual}/year · EUR annual billing`
                   : "No card. No subscription required."}
               </p>
               <p>
@@ -153,7 +153,7 @@ export default function Product() {
           ))}
         </div>
         <p className="tiny muted">
-          Single-user plans. USD pricing; applicable taxes are shown at
+          Single-user plans. EUR pricing; applicable taxes are shown at
           checkout. Final consumer tax-inclusive pricing and legal terms require
           pre-launch review.
         </p>

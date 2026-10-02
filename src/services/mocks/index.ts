@@ -62,34 +62,15 @@ export const mockServices: Services = {
     return structuredClone(get());
   },
   auth: {
-    async login(email, password) {
-      await online();
-      if (get().diagnostics.authFailure === "network")
-        throw new Error("Sign-in service unavailable. Please retry.");
-      if (
-        password.length < 8 ||
-        email.startsWith("invalid@") ||
-        get().diagnostics.authFailure === "credentials"
-      )
-        throw new Error("Email or password is incorrect.");
-      const user = {
-        id: uid(),
-        name: email.split("@")[0],
-        email,
-        avatar: "",
-        status: "active" as const,
-        createdAt: stamp(),
-      };
-      get().user = user;
-      persist();
-      return user;
+    async login() {
+      throw new Error(
+        "Use /portal to sign in to a real G-Bot account. Explore Demo needs no credentials.",
+      );
     },
-    async signup(name, email, password) {
-      const user = await mockServices.auth.login(email, password);
-      user.name = name;
-      get().user = user;
-      persist();
-      return user;
+    async signup() {
+      throw new Error(
+        "Use /portal to create a real G-Bot account. Explore Demo needs no credentials.",
+      );
     },
     async logout() {
       stopAll();
@@ -97,9 +78,10 @@ export const mockServices: Services = {
       get().user = null;
       persist();
     },
-    async resetPassword(email) {
-      await online();
-      if (!email.includes("@")) throw new Error("Enter your email first.");
+    async resetPassword() {
+      throw new Error(
+        "Use password recovery in /portal for your real G-Bot account.",
+      );
     },
     async demo() {
       await delay();

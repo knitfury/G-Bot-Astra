@@ -25,7 +25,12 @@ export function Onboarding() {
           <Logo small />
           <strong>Your workspace, made yours.</strong>
         </div>
-        <Badge>Setup {step + 1} of 3</Badge>
+        <Badge>
+          {data.runtime
+            ? "Setup"
+            : "Demo Mode · Fictional data · No live actions · Setup"}{" "}
+          {step + 1} of 3
+        </Badge>
       </div>
       <div className="onboarding-progress">
         {["Choose a plan", "Connect your AI", "Connect your apps"].map(

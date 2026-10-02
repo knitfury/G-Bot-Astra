@@ -1,21 +1,12 @@
 "use client";
+import { useAccountLinks, WebAccountRedirect } from "./account-boundary";
 import { DesktopAuth } from "./desktop-auth";
 import { useSnapshot } from "@/hooks/use-services";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { desktopCall } from "@/services/desktop/client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import {
-  ArrowRight,
-  Eye,
-  EyeSlash,
-  Check,
-  ShieldCheck,
-  ArrowLeft,
-} from "@phosphor-icons/react";
+import { ArrowRight, Check, ShieldCheck } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import { useDesktop } from "@/hooks/use-desktop";
 import { services } from "@/services";
@@ -23,38 +14,18 @@ import { useAction } from "@/hooks/use-services";
 import { useWorkspace } from "@/stores/workspace";
 import {
   Logo,
+  Loading,
   AppIcon,
   Badge,
   ErrorState,
-  MockNote,
   Notice,
 } from "@/components/common/ui";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
-const schema = z.object({
-  name: z.string(),
-  email: z.email("Enter a valid email address."),
-  password: z.string().min(8, "Use at least 8 characters."),
-  terms: z.boolean(),
-});
-type Values = z.infer<typeof schema>;
 export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
   const router = useRouter(),
     action = useAction(),
     setConversation = useWorkspace((s) => s.setConversation);
-  const [visible, setVisible] = useState(false),
-    [reset, setReset] = useState(false),
-    [termsOpen, setTermsOpen] = useState(false);
-  const {
-    register,
-    handleSubmit,
-    getValues,
-    formState: { errors },
-    setError,
-  } = useForm<Values>({
-    resolver: zodResolver(schema),
-    defaultValues: { name: "", email: "", password: "", terms: false },
-  });
+  const links = useAccountLinks();
   const desktop = useDesktop();
   const { data: snapshot } = useSnapshot();
   useEffect(() => {
@@ -75,22 +46,9 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
     setConversation("");
     router.push("/workspace");
   }
-  async function submit(v: Values) {
-    if (mode === "signup" && (!v.name.trim() || !v.terms)) {
-      setError(!v.name.trim() ? "name" : "terms", {
-        message: !v.name.trim()
-          ? "Enter your name."
-          : "Acknowledge the demo terms to continue.",
-      });
-      return;
-    }
-    await action.mutateAsync(() =>
-      mode === "signup"
-        ? services.auth.signup(v.name, v.email, v.password)
-        : services.auth.login(v.email, v.password),
-    );
-    router.push(mode === "signup" ? "/onboarding" : "/workspace");
-  }
+  // Do not expose a browser account link before detecting the native bridge.
+  if (!links.ready) return <Loading label="Opening G-Bot…" />;
+  if (!desktop && mode !== "welcome") return <WebAccountRedirect />;
   if (desktop && !snapshot) return <div role="status">Opening G-Bot…</div>;
   if (desktop && snapshot?.runtime?.production && mode !== "welcome")
     return <DesktopAuth key={mode} mode={mode} />;
@@ -148,7 +106,7 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
         {snapshot?.runtime?.production ? (
           <span className="tiny muted">Your providers. Your permissions.</span>
         ) : (
-          <MockNote />
+          <span className="tiny muted">Product preview · Fictional data</span>
         )}
       </div>
       <section className="auth-copy">
@@ -209,182 +167,37 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
       </section>
       <section className="auth-form-wrap">
         <div className="auth-form panel">
-          {mode === "welcome" ? (
-            <>
-              <Logo />
-              <h2>Meet your new way to work.</h2>
-              <p>
-                A calmer workspace for everything your business needs to get
-                done.
-              </p>
-              <Button variant="default" asChild>
-                <Link href="/signup">
-                  Create account
-                  <ArrowRight size={17} />
-                </Link>
-              </Button>
-              <Button asChild>
-                <Link href="/login">Sign in</Link>
-              </Button>
-              <div className="divider" />
-              <Button
-                variant="ghost"
-                disabled={action.isPending}
-                onClick={() => void demo().catch(() => {})}
-              >
-                {action.isPending
-                  ? "Preparing your workspace…"
-                  : snapshot?.runtime?.production
-                    ? "Explore Demo"
-                    : "Explore the demo"}
-                <ArrowRight size={16} />
-              </Button>
-              <p className="tiny">
-                A populated workspace with fictional customers. No account or
-                API key needed.
-              </p>
-            </>
-          ) : (
-            <>
-              <Link href="/" className="row muted tiny">
-                <ArrowLeft />
-                Back to welcome
-              </Link>
-              <h2>
-                {mode === "signup"
-                  ? "Make room for better work."
-                  : "Welcome back."}
-              </h2>
-              <p>
-                {mode === "signup"
-                  ? "Create your demo account to get started."
-                  : "Sign in to your G-Bot workspace."}
-              </p>
-              <form
-                onSubmit={handleSubmit((v) => void submit(v).catch(() => {}))}
-                className="stack"
-                noValidate
-              >
-                {mode === "signup" && (
-                  <label className="field">
-                    Your name
-                    <input
-                      autoComplete="name"
-                      {...register("name")}
-                      placeholder="Alex Morgan"
-                    />
-                    {errors.name && (
-                      <span className="field-error">{errors.name.message}</span>
-                    )}
-                  </label>
-                )}
-                <label className="field">
-                  Email address
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    {...register("email")}
-                    placeholder="you@company.com"
-                  />
-                  {errors.email && (
-                    <span className="field-error">{errors.email.message}</span>
-                  )}
-                </label>
-                <label className="field">
-                  Password
-                  <div className="password-field">
-                    <input
-                      type={visible ? "text" : "password"}
-                      autoComplete={
-                        mode === "signup" ? "new-password" : "current-password"
-                      }
-                      {...register("password")}
-                      placeholder="At least 8 characters"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={visible ? "Hide password" : "Show password"}
-                      onClick={() => setVisible(!visible)}
-                    >
-                      {visible ? <EyeSlash size={18} /> : <Eye size={18} />}
-                    </Button>
-                  </div>
-                  {errors.password && (
-                    <span className="field-error">
-                      {errors.password.message}
-                    </span>
-                  )}
-                </label>
-                {mode === "signup" ? (
-                  <>
-                    <label className="check-row">
-                      <input type="checkbox" {...register("terms")} />I
-                      acknowledge the{" "}
-                      <button
-                        type="button"
-                        className="text-link"
-                        onClick={() => setTermsOpen(true)}
-                      >
-                        demo terms
-                      </button>
-                      .
-                    </label>
-                    {errors.terms && (
-                      <span className="field-error">
-                        {errors.terms.message}
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <button
-                    className="text-link small"
-                    type="button"
-                    onClick={() =>
-                      void action
-                        .mutateAsync(() =>
-                          services.auth.resetPassword(getValues("email")),
-                        )
-                        .then(() => setReset(true))
-                        .catch(() => {})
-                    }
-                  >
-                    Forgot password?
-                  </button>
-                )}
-                {reset && (
-                  <Notice>
-                    Reset request simulated. No email was sent; any demo
-                    password with 8+ characters works.
-                  </Notice>
-                )}
-                <Button
-                  variant="default"
-                  disabled={action.isPending}
-                  type="submit"
-                >
-                  {action.isPending
-                    ? "Connecting…"
-                    : mode === "signup"
-                      ? "Create account"
-                      : "Sign in"}
-                  <ArrowRight size={16} />
-                </Button>
-              </form>
-              <p className="tiny">
-                {mode === "signup"
-                  ? "Already have an account?"
-                  : "New to G-Bot?"}{" "}
-                <Link
-                  className="text-link"
-                  href={mode === "signup" ? "/login" : "/signup"}
-                >
-                  {mode === "signup" ? "Sign in" : "Create account"}
-                </Link>
-              </p>
-            </>
-          )}
+          <Logo />
+          <h2>Meet your new way to work.</h2>
+          <p>
+            A calmer workspace for everything your business needs to get done.
+          </p>
+          <Button variant="default" asChild>
+            <Link href={links.signup}>
+              Create account
+              <ArrowRight size={17} />
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href={links.signin}>Sign in</Link>
+          </Button>
+          <div className="divider" />
+          <Button
+            variant="ghost"
+            disabled={action.isPending}
+            onClick={() => void demo().catch(() => {})}
+          >
+            {action.isPending
+              ? "Preparing your workspace…"
+              : snapshot?.runtime?.production
+                ? "Explore Demo"
+                : "Explore the demo"}
+            <ArrowRight size={16} />
+          </Button>
+          <p className="tiny">
+            A populated workspace with fictional customers. No account or API
+            key needed.
+          </p>
           {snapshot?.runtime?.production && snapshot.runtime.sessionNotice && (
             <Notice>{snapshot.runtime.sessionNotice}</Notice>
           )}
@@ -396,22 +209,6 @@ export function AuthScreen({ mode }: { mode: "welcome" | "login" | "signup" }) {
           </div>
         </div>
       </section>
-      <Dialog
-        open={termsOpen}
-        onOpenChange={setTermsOpen}
-        title="Demo terms"
-        description="This is an interactive product prototype."
-      >
-        <p>
-          This demonstration stores fictional account and workspace information
-          in this browser. It does not authenticate identity, send email, charge
-          payments, or contact AI providers. Do not enter real credentials or
-          sensitive information.
-        </p>
-        <div className="form-actions">
-          <Button onClick={() => setTermsOpen(false)}>Close</Button>
-        </div>
-      </Dialog>
     </div>
   );
 }
