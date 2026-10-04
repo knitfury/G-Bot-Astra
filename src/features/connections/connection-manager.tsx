@@ -1,4 +1,5 @@
 "use client";
+import { discoveryDetails } from "@/lib/mcp-discovery";
 import { contextConnections } from "@/lib/connections";
 import { CatalogBrowser } from "./catalog-browser";
 import { useState } from "react";
@@ -674,6 +675,20 @@ export function ConnectionDetail({ id }: { id: string }) {
         ) : (
           <div className="stack">
             <h2>Technical connection details</h2>
+            <details>
+              <summary>Sanitized MCP discovery for support</summary>
+              <p>
+                Reconnect first to refresh metadata. Copy the JSON below; review
+                tool and parameter identifiers before sharing. Endpoint,
+                credentials and mail data are excluded.
+              </p>
+              <textarea
+                aria-label="Sanitized MCP discovery"
+                readOnly
+                rows={12}
+                value={JSON.stringify(discoveryDetails(c), null, 2)}
+              />
+            </details>
             <label className="field">
               MCP URL
               <input readOnly value={c.url} />

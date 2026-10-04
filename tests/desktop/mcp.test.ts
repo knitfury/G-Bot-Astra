@@ -43,7 +43,12 @@ test("real SDK remote transport authenticates, discovers disabled tools, calls a
         {
           description: "Read stock",
           inputSchema: { sku: z.string() },
-          annotations: { readOnlyHint: true, destructiveHint: false },
+          annotations: {
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
         },
         async ({ sku }) => {
           count++;
@@ -133,6 +138,13 @@ test("real SDK remote transport authenticates, discovers disabled tools, calls a
     assert.equal(tools.length, 2);
     assert.ok(tools.every((t) => !t.enabled));
     assert.equal(tools[0].requiresApproval, false);
+    assert.deepEqual(tools[0].annotations, {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    assert.deepEqual(tools[1].annotations, {});
     assert.equal(tools[1].requiresApproval, true);
     const result = await runtime.call(
       c,

@@ -90,6 +90,15 @@ test("native panes configure read parameters without AI; production cards never 
     ).toBeVisible();
     await page.getByRole("button", { name: "Configure pane" }).first().click();
     const dialog = page.getByRole("dialog");
+    await expect(
+      dialog.getByRole("option", { name: /Send response/ }),
+    ).toHaveCount(0);
+    await expect(dialog.getByText(/Send response:/)).not.toBeVisible();
+    await dialog.getByText(/Advanced · blocked operations/).click();
+    await expect(dialog.getByText(/Send response:/)).toBeVisible();
+    await dialog.getByLabel("Filter operations").fill("absent-operation");
+    await expect(dialog.getByText(/Send response:/)).toHaveCount(0);
+    await dialog.getByLabel("Filter operations").fill("");
     await dialog
       .getByLabel("Read source", { exact: true })
       .selectOption("tool:read");

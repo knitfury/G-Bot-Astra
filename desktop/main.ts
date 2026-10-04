@@ -255,6 +255,7 @@ async function boot() {
   );
   const inference = new HTTPInference();
   const guardedMcp = {
+    paneMappings: () => catalog.paneMappings(),
     connect: async (...args: Parameters<typeof mcp.connect>) => {
       await identity.ensure();
       await catalog.assertAllowed(args[0].url);

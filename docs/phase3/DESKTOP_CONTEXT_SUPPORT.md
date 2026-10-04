@@ -68,3 +68,50 @@ cards and durable Settings, clear cache while preserving login/configuration,
 restart, inspect logs/diagnostics and open the support email application.
 
 No database migration, release or merge is part of this change.
+
+## Owner-test follow-up: pane trust and Zoho discovery
+
+The desktop now retains all four boolean MCP annotations. Old saved tool records
+without annotation evidence must be reconnected; an internal `risk: read` value
+alone no longer grants automatic pane execution. Names and descriptions cannot
+grant authority. State-changing identifiers and explicit contradictory hints veto
+pane use even if a server claims read-only. Tool enablement, connection entitlement,
+argument validation and in-flight revocation checks remain mandatory. A positive
+server declaration is a claim, not proof: enable automatic access only for a server
+you trust. There is no user override for an unverified operation.
+
+Signed catalog v2 optionally carries `paneReads`: exact credential-free HTTPS
+endpoint, tool, discovery schema hash, reviewed fixed arguments, presentation kind,
+human label, field paths and review evidence. Only fresh verified recommended
+entries grant reads; disabled/revoked/expired/mismatched grants fail closed. These
+grants are pane-specific and do not remove AI action approvals. User configuration
+cannot change a catalog-only grant's reviewed argument set. V1 catalogs still work
+without grants. Existing v1-only clients reject v2 safely; do not publish v2 to a
+mixed client fleet without a coordinated catalog delivery/client rollout. No catalog
+or signing keys are published or changed by this PR.
+
+Configure Pane lists usable sources first. Blocked operations remain inspectable
+under a searchable Advanced/security disclosure. Connections → Technical connection
+details → Sanitized MCP discovery exposes a copyable schema-shape report with tool
+names, required parameter names, four annotations and schema hashes. It excludes
+URLs, credentials, descriptions, schema literal values and business responses.
+Review identifiers before sharing. This diagnostic shape is not a replacement for
+reviewing the complete operation contract before signing a read grant.
+
+No Zoho read grant has been invented or published. The owner's actual tools/list
+payload is not available in the development environment. Automatic account/folder
+resolution and a production Zoho template remain blocked on that evidence and a
+reviewed connector identity. A name such as listEmails alone is insufficient.
+
+Owner acceptance:
+1. Install the new unsigned owner build; retain existing data and use no AI provider.
+2. Reconnect Zoho so annotations refresh. Inspect enabled retrieval tools and the
+   new Configure Pane source/blocked sections.
+3. Copy the sanitized discovery report from Technical connection details. Share
+   only the reviewed report, never the endpoint token, headers, vault or mail data.
+4. If a declared read source is available, explicitly trust it, provide its required
+   parameters, and check displayed sender/subject/preview with unread state unchanged.
+5. Confirm mutation tools remain blocked even when enabled for AI use; disabling a
+   read permission removes its pane data. Restart and check saved configuration.
+6. Recheck account plan cards, settings, Back, Help/logs/support, safe cache clearing,
+   Restart, real auth/billing and Demo isolation. Do not merge or release yet.

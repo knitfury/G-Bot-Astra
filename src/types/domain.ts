@@ -89,6 +89,12 @@ export interface AIProviderConnection extends Omit<ProviderInput, "key"> {
   lastTest: string;
 }
 export interface MCPTool {
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
   outputSchema?: Record<string, unknown>;
   inputSchema?: Record<string, unknown>;
   schemaHash?: string;

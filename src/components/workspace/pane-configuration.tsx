@@ -19,6 +19,7 @@ export function PaneConfiguration({
 }) {
   const [open, setOpen] = useState(false),
     [selected, setSelected] = useState(""),
+    [filter, setFilter] = useState(""),
     [args, setArgs] = useState(
       JSON.stringify(connection.snapshotConfig?.arguments ?? {}, null, 2),
     ),
@@ -98,32 +99,79 @@ export function PaneConfiguration({
               value={selected}
               onChange={(e) => {
                 setSelected(e.target.value);
+                const next = sources.data?.find(
+                  (s) => `${s.source}:${s.name}` === e.target.value,
+                );
+                setArgs(
+                  JSON.stringify(next?.defaults?.arguments ?? {}, null, 2),
+                );
+                setKind(next?.defaults?.kind ?? "generic");
+                setFields(next?.defaults?.fields ?? {});
                 setConsent(false);
               }}
             >
               <option value="">Choose a source</option>
-              {sources.data?.map((s) => (
-                <option
-                  key={`${s.source}:${s.name}`}
-                  value={`${s.source}:${s.name}`}
-                  disabled={!s.eligible}
-                >
-                  {s.label} · {s.source}
-                  {!s.eligible ? " · unavailable" : ""}
-                </option>
-              ))}
+              {sources.data
+                ?.filter((s) => s.eligible)
+                .map((s) => (
+                  <option
+                    key={`${s.source}:${s.name}`}
+                    value={`${s.source}:${s.name}`}
+                    disabled={!s.eligible}
+                  >
+                    {s.label} · {s.source}
+                    {!s.eligible ? " · unavailable" : ""}
+                  </option>
+                ))}
             </select>
           </label>
-          {sources.data
-            ?.filter((s) => !s.eligible)
-            .map((s) => (
-              <p key={s.name} className="tiny muted">
-                {s.label}: {s.reason}
+          {sources.data && !sources.data.some((s) => s.eligible) && (
+            <div role="status">
+              <h3>No trusted read source available</h3>
+              <p>
+                This server has not supplied an enabled, verified read source.
+                Reconnect after enabling its retrieval tools, or share the
+                sanitized discovery details with support. An AI provider is not
+                required. Unverified tools cannot be approved for automatic pane
+                access.
               </p>
-            ))}
+            </div>
+          )}
+          <details>
+            <summary>
+              Advanced · blocked operations and security reasons (
+              {sources.data?.filter((s) => !s.eligible).length ?? 0})
+            </summary>
+            <label className="field">
+              Filter operations
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </label>
+            {sources.data
+              ?.filter(
+                (s) =>
+                  !s.eligible &&
+                  s.label.toLowerCase().includes(filter.toLowerCase()),
+              )
+              .map((s) => (
+                <p key={`${s.source}:${s.name}`} className="tiny muted">
+                  {s.label}: {s.reason}
+                </p>
+              ))}
+          </details>
           {source && (
             <>
               <p>{source.reason}</p>
+              {source.authority && (
+                <p className="tiny">
+                  Trust basis:{" "}
+                  {source.authority === "signed-catalog"
+                    ? "G-Bot signed catalog · reviewed arguments only"
+                    : "MCP server declaration · trust this server before enabling automatic access"}
+                </p>
+              )}
               {source.template && (
                 <p>
                   Resource template: <code>{source.name}</code>. Supply its

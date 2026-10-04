@@ -41,6 +41,7 @@ function connection(): MCPConnection {
         label: "Lookup",
         description: "Read mailbox",
         risk: "read",
+        annotations: { readOnlyHint: true, destructiveHint: false },
         requiresApproval: false,
         enabled: true,
         schemaHash: "v1",

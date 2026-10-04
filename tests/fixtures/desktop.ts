@@ -45,6 +45,7 @@ export async function fixtureRuntime(
         enabled:
           c.tools.find((t) => t.name === (write ? "send" : "read"))?.enabled ??
           false,
+        annotations: { readOnlyHint: !write, destructiveHint: false },
         risk: write ? "write" : "read",
         requiresApproval: write,
         inputSchema: {

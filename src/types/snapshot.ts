@@ -32,6 +32,12 @@ export interface SnapshotSource {
   reason: string;
   inputSchema?: Record<string, unknown>;
   template?: boolean;
+  defaults?: {
+    kind: SnapshotKind;
+    arguments: Record<string, unknown>;
+    fields?: SnapshotConfig["fields"];
+  };
+  authority?: "server-declared" | "signed-catalog";
 }
 export interface SnapshotItem {
   id: string;

@@ -29,6 +29,24 @@ export class CatalogClient {
       );
     }
   }
+  async paneMappings() {
+    if (!Object.keys(this.keys).length) return [];
+    // Only verified, fresh, recommended entries can grant unattended read authority.
+    // Deliberately do not use assertAllowed's custom-connection availability fallback.
+    const { catalog } = await this.get();
+    if (
+      !catalog ||
+      catalog.version !== 2 ||
+      catalog.expiresAt <= Date.now() ||
+      catalog.disabledFeatures.includes("recommended")
+    )
+      return [];
+    return (catalog.paneReads ?? []).filter((m) =>
+      catalog.entries.some(
+        (e) => e.endpoint === m.endpoint && e.status === "recommended",
+      ),
+    );
+  }
   constructor(
     private vault: SecretVault,
     private origin: string,

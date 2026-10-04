@@ -1,3 +1,4 @@
+import { declaredRead, mutationVeto, readReason } from "./read-policy";
 import { UriTemplate } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 import { DomainError } from "./errors";
 import { z } from "zod";
@@ -77,6 +78,8 @@ export interface SnapshotMapping {
   kind: SnapshotKind;
   arguments: Record<string, unknown>;
   evidence: string;
+  label?: string;
+  fields?: SnapshotConfig["fields"];
 }
 // Only release-reviewed mappings enter this registry. Names alone never establish vendor trust.
 export const recommendedMappings: ReadonlyArray<SnapshotMapping> = [];
@@ -85,7 +88,15 @@ export function snapshotRead(
   t: MCPTool,
   mappings: ReadonlyArray<SnapshotMapping> = recommendedMappings,
 ): { kind: SnapshotKind; args: Record<string, unknown> } | null {
-  if (t.risk !== "read" || t.requiresApproval) return null;
+  if (mutationVeto(t)) return null;
+  const tested = mappings.find(
+    (m) =>
+      m.endpoint === c.url &&
+      m.tool === t.name &&
+      m.schemaHash === t.schemaHash &&
+      m.evidence.length > 20,
+  );
+  if (!declaredRead(t) && !tested) return null;
   if (c.snapshotConfig) {
     const config = configSchema.safeParse(c.snapshotConfig);
     if (
@@ -93,7 +104,10 @@ export function snapshotRead(
       config.data.endpoint !== c.url ||
       config.data.source !== "tool" ||
       config.data.name !== t.name ||
-      config.data.binding !== t.schemaHash
+      config.data.binding !== t.schemaHash ||
+      (!declaredRead(t) &&
+        JSON.stringify(config.data.arguments) !==
+          JSON.stringify(tested?.arguments))
     )
       return null;
     try {
@@ -107,13 +121,6 @@ export function snapshotRead(
       return null;
     }
   }
-  const tested = mappings.find(
-    (m) =>
-      m.endpoint === c.url &&
-      m.tool === t.name &&
-      m.schemaHash === t.schemaHash &&
-      m.evidence.length > 20,
-  );
   let args: Record<string, unknown> = {},
     kind: SnapshotKind | undefined = tested?.kind;
   if (tested) args = tested.arguments;
@@ -383,20 +390,53 @@ export class Snapshots {
         "ENTITLEMENT",
         "Connect this app within your plan before configuring context.",
       );
+    const mappings = (await this.mcp.paneMappings?.()) ?? [];
     const tools: SnapshotSource[] = c.tools.map((t) => ({
       source: "tool",
       name: t.name,
-      label: t.label,
+      label:
+        mappings.find(
+          (m) =>
+            m.endpoint === c.url &&
+            m.tool === t.name &&
+            m.schemaHash === t.schemaHash,
+        )?.label ?? t.label,
       binding: t.schemaHash ?? "",
       eligible:
-        t.enabled && t.risk === "read" && !t.requiresApproval && !!t.schemaHash,
-      reason: !t.enabled
+        t.enabled &&
+        !mutationVeto(t) &&
+        (declaredRead(t) ||
+          mappings.some(
+            (m) =>
+              m.endpoint === c.url &&
+              m.tool === t.name &&
+              m.schemaHash === t.schemaHash &&
+              m.evidence.length > 20,
+          )) &&
+        !!t.schemaHash,
+      reason: mutationVeto(t) ? readReason(t) : !t.enabled
         ? "Enable this tool in Tools & Permissions first."
-        : t.risk !== "read" || t.requiresApproval
-          ? "Not verified as read-only. Automatic execution is blocked."
-          : snapshotRead(c, t)
-            ? "Automatic read available."
+        : !declaredRead(t) && !snapshotRead(c, t, mappings)
+          ? readReason(t)
+          : snapshotRead(c, t, mappings)
+            ? "Automatic read available. Review this server’s trust and tool permissions."
             : "Select this read source and supply any required parameters.",
+      authority: declaredRead(t)
+        ? "server-declared"
+        : mappings.some(
+              (m) =>
+                m.endpoint === c.url &&
+                m.tool === t.name &&
+                m.schemaHash === t.schemaHash,
+            )
+          ? "signed-catalog"
+          : undefined,
+      defaults: mappings.find(
+        (m) =>
+          m.endpoint === c.url &&
+          m.tool === t.name &&
+          m.schemaHash === t.schemaHash,
+      ),
       inputSchema: t.inputSchema,
     }));
     try {
@@ -470,6 +510,21 @@ export class Snapshots {
         "INVALID_ARGUMENTS",
         "Supply every resource template parameter before saving.",
       );
+    if (source.source === "tool") {
+      const tool = c.tools.find((t) => t.name === config.name);
+      if (
+        !tool ||
+        !snapshotRead(
+          { ...c, snapshotConfig: config },
+          tool,
+          (await this.mcp.paneMappings?.()) ?? [],
+        )
+      )
+        throw new DomainError(
+          "INVALID_ARGUMENTS",
+          "The selected arguments are not authorized by this read source. Catalog-only sources require the reviewed argument set.",
+        );
+    }
     c.snapshotConfig = config;
     this.clear();
   }
@@ -499,11 +554,13 @@ export class Snapshots {
             ? "Authorization expired. Reconnect to refresh your business context."
             : "Reconnect this app or review your plan. Saved configuration is retained.",
       };
+    const mappings = (await this.mcp.paneMappings?.()) ?? [];
     const keyFor = () =>
       JSON.stringify([
         this.connection(id),
         this.entitlement(),
         this.generation,
+        mappings,
       ]);
     const key = keyFor();
     const prior = this.cache.get(id);
@@ -528,7 +585,7 @@ export class Snapshots {
               s.binding === config.binding,
           );
           if (
-            !source ||
+            !source?.eligible ||
             config.endpoint !== c.url ||
             !this.mcp.readResource ||
             key !== keyFor()
@@ -570,7 +627,7 @@ export class Snapshots {
         }
       }
       const possible = c.tools
-        .map((t) => ({ t, map: snapshotRead(c, t) }))
+        .map((t) => ({ t, map: snapshotRead(c, t, mappings) }))
         .filter((x) => x.map !== null);
       const allowed = possible.filter((x) => x.t.enabled).slice(0, 2);
       if (!allowed.length)
@@ -603,7 +660,13 @@ export class Snapshots {
             !connectionAvailable(this.entitlement(), current) ||
             !currentTool?.enabled ||
             currentTool.schemaHash !== t.schemaHash ||
-            !snapshotRead(current, currentTool)
+            JSON.stringify(
+              snapshotRead(
+                current,
+                currentTool,
+                (await this.mcp.paneMappings?.()) ?? [],
+              ),
+            ) !== JSON.stringify(map)
           )
             throw Error();
           const raw = await this.mcp.call(
@@ -621,8 +684,13 @@ export class Snapshots {
             after.url !== current.url ||
             !afterTool?.enabled ||
             afterTool.schemaHash !== t.schemaHash ||
-            afterTool.risk !== "read" ||
-            afterTool.requiresApproval ||
+            JSON.stringify(
+              snapshotRead(
+                after,
+                afterTool,
+                (await this.mcp.paneMappings?.()) ?? [],
+              ),
+            ) !== JSON.stringify(map) ||
             !connectionAvailable(this.entitlement(), after)
           )
             throw Error();
@@ -635,7 +703,17 @@ export class Snapshots {
             )
           )
             throw Error();
-          const items = snapshotItems(raw, map!.kind, c.snapshotConfig?.fields);
+          const items = snapshotItems(
+            raw,
+            map!.kind,
+            c.snapshotConfig?.fields ??
+              mappings.find(
+                (m) =>
+                  m.endpoint === c.url &&
+                  m.tool === t.name &&
+                  m.schemaHash === t.schemaHash,
+              )?.fields,
+          );
           if (items === null) {
             failures++;
             continue;

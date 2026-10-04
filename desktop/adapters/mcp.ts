@@ -10,6 +10,9 @@ import { remoteURL } from "../runtime/security";
 import { DomainError } from "../runtime/errors";
 import { DesktopOAuth } from "./oauth";
 export interface MCPRuntime {
+  paneMappings?(): Promise<
+    ReadonlyArray<import("../runtime/snapshots").SnapshotMapping>
+  >;
   sources?(connection: MCPConnection): Promise<SnapshotSource[]>;
   readResource?(
     connection: MCPConnection,
@@ -152,6 +155,18 @@ export class RemoteMCP implements MCPRuntime {
               outputSchema: t.outputSchema as
                 Record<string, unknown> | undefined,
               schemaHash,
+              annotations: Object.fromEntries(
+                (
+                  [
+                    "readOnlyHint",
+                    "destructiveHint",
+                    "idempotentHint",
+                    "openWorldHint",
+                  ] as const
+                )
+                  .filter((k) => typeof t.annotations?.[k] === "boolean")
+                  .map((k) => [k, t.annotations![k]]),
+              ),
             });
           }
           cursor = result.nextCursor;
