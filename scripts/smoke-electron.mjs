@@ -587,6 +587,9 @@ try {
               !a.startsWith("--remote-debugging-port") && a !== "--no-sandbox",
           ),
           "--no-sandbox",
+          // Playwright appends this switch outside process.argv. Preserve its
+          // existing test keychain so the real relaunch can decrypt the fixture.
+          ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []),
           `--remote-debugging-port=${port}`,
         ],
       });
