@@ -625,7 +625,11 @@ try {
     )
     .toBe(true);
   const context = relaunchedBrowser.contexts()[0];
-  await expect.poll(() => context.pages().length).toBeGreaterThan(0);
+  // CDP can connect before Electron has completed native initialization.
+  // Match the same 60-second startup bound used by firstWindow above.
+  await expect
+    .poll(() => context.pages().length, { timeout: 60000 })
+    .toBeGreaterThan(0);
   const after = context.pages()[0];
   await after
     .getByRole("heading", { name: "What can we get done?" })
