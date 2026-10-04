@@ -1,3 +1,5 @@
+import { UriTemplate } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
+import type { SnapshotSource } from "../../src/types/snapshot";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
@@ -8,6 +10,13 @@ import { remoteURL } from "../runtime/security";
 import { DomainError } from "../runtime/errors";
 import { DesktopOAuth } from "./oauth";
 export interface MCPRuntime {
+  sources?(connection: MCPConnection): Promise<SnapshotSource[]>;
+  readResource?(
+    connection: MCPConnection,
+    source: SnapshotSource,
+    args: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<string>;
   connect(connection: MCPConnection): Promise<MCPTool[]>;
   call(
     connection: MCPConnection,
@@ -95,57 +104,63 @@ export class RemoteMCP implements MCPRuntime {
       const discovered: MCPTool[] = [];
       let cursor: string | undefined;
       let pages = 0;
-      do {
-        const result = await client.listTools(cursor ? { cursor } : undefined);
-        for (const t of result.tools) {
-          const schema = t.inputSchema as Record<string, unknown>;
-          if (JSON.stringify(schema).length > 50000)
+      if (client.getServerCapabilities()?.tools)
+        do {
+          const result = await client.listTools(
+            cursor ? { cursor } : undefined,
+          );
+          for (const t of result.tools) {
+            const schema = t.inputSchema as Record<string, unknown>;
+            if (JSON.stringify(schema).length > 50000)
+              throw new DomainError(
+                "MCP_PROTOCOL",
+                "Tool schema exceeds the supported size limit.",
+              );
+            const schemaHash = createHash("sha256")
+              .update(
+                JSON.stringify({
+                  schema,
+                  annotations: t.annotations,
+                  outputSchema: t.outputSchema,
+                  description: t.description,
+                }),
+              )
+              .digest("hex");
+            const old = c.tools.find(
+              (x) => x.name === t.name && x.schemaHash === schemaHash,
+            );
+            const read =
+              t.annotations?.readOnlyHint === true &&
+              t.annotations?.destructiveHint !== true;
+            discovered.push({
+              id: `${c.id}:${t.name}`,
+              connectionId: c.id,
+              name: t.name,
+              label: t.title || t.name,
+              description: (t.description || "No description supplied.").slice(
+                0,
+                4000,
+              ),
+              risk: read
+                ? "read"
+                : t.annotations?.destructiveHint
+                  ? "destructive"
+                  : "write",
+              requiresApproval: !read,
+              enabled: old?.enabled ?? false,
+              inputSchema: schema,
+              outputSchema: t.outputSchema as
+                Record<string, unknown> | undefined,
+              schemaHash,
+            });
+          }
+          cursor = result.nextCursor;
+          if (++pages > 20 || discovered.length > 500)
             throw new DomainError(
               "MCP_PROTOCOL",
-              "Tool schema exceeds the supported size limit.",
+              "Server discovery exceeded the supported limit.",
             );
-          const schemaHash = createHash("sha256")
-            .update(
-              JSON.stringify({
-                schema,
-                annotations: t.annotations,
-                description: t.description,
-              }),
-            )
-            .digest("hex");
-          const old = c.tools.find(
-            (x) => x.name === t.name && x.schemaHash === schemaHash,
-          );
-          const read =
-            t.annotations?.readOnlyHint === true &&
-            t.annotations?.destructiveHint !== true;
-          discovered.push({
-            id: `${c.id}:${t.name}`,
-            connectionId: c.id,
-            name: t.name,
-            label: t.title || t.name,
-            description: (t.description || "No description supplied.").slice(
-              0,
-              4000,
-            ),
-            risk: read
-              ? "read"
-              : t.annotations?.destructiveHint
-                ? "destructive"
-                : "write",
-            requiresApproval: !read,
-            enabled: old?.enabled ?? false,
-            inputSchema: schema,
-            schemaHash,
-          });
-        }
-        cursor = result.nextCursor;
-        if (++pages > 20 || discovered.length > 500)
-          throw new DomainError(
-            "MCP_PROTOCOL",
-            "Server discovery exceeded the supported limit.",
-          );
-      } while (cursor);
+        } while (cursor);
       this.clients.set(c.id, client);
       if (provider) provider.interactive = false;
       let checking = false;
@@ -177,6 +192,89 @@ export class RemoteMCP implements MCPRuntime {
     } finally {
       provider?.close();
     }
+  }
+  async sources(c: MCPConnection): Promise<SnapshotSource[]> {
+    const client = this.clients.get(c.id);
+    if (!client)
+      throw new DomainError(
+        "MCP_UNAVAILABLE",
+        "Reconnect before discovering pane sources.",
+      );
+    if (!client.getServerCapabilities()?.resources) return [];
+    const sources: SnapshotSource[] = [];
+    for (const template of [false, true]) {
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        const result = template
+          ? await client.listResourceTemplates(
+              cursor ? { cursor } : undefined,
+              { timeout: 10_000 },
+            )
+          : await client.listResources(cursor ? { cursor } : undefined, {
+              timeout: 10_000,
+            });
+        const values = (
+          "resources" in result ? result.resources : result.resourceTemplates
+        ) as Array<{
+          uri?: string;
+          uriTemplate?: string;
+          name: string;
+          title?: string;
+        }>;
+        for (const raw of values) {
+          const name = String("uri" in raw ? raw.uri : raw.uriTemplate);
+          if (name.length > 4000) continue;
+          sources.push({
+            source: "resource",
+            name,
+            label: String(raw.title || raw.name).slice(0, 500),
+            binding: createHash("sha256")
+              .update(JSON.stringify(raw))
+              .digest("hex"),
+            eligible: true,
+            reason:
+              "Read resource from this server; explicit pane permission required.",
+            template,
+          });
+        }
+        cursor = result.nextCursor;
+        if (++pages > 20 || sources.length > 500)
+          throw new DomainError(
+            "MCP_PROTOCOL",
+            "Resource discovery exceeded the supported limit.",
+          );
+      } while (cursor);
+    }
+    return sources;
+  }
+  async readResource(
+    c: MCPConnection,
+    source: SnapshotSource,
+    args: Record<string, unknown>,
+    signal: AbortSignal,
+  ) {
+    const client = this.clients.get(c.id);
+    if (!client)
+      throw new DomainError(
+        "MCP_UNAVAILABLE",
+        "Reconnect before reading resources.",
+      );
+    // A resource URI is sent only to this MCP server. It is never fetched or opened locally.
+    const uri = source.template
+      ? new UriTemplate(source.name).expand(args as Record<string, string>)
+      : source.name;
+    const result = await client.readResource(
+      { uri },
+      { signal, timeout: 20_000 },
+    );
+    const raw = JSON.stringify(result);
+    if (raw.length > 200_000)
+      throw new DomainError(
+        "TOOL_FAILED",
+        "Resource exceeds the pane size limit.",
+      );
+    return raw;
   }
   async call(
     c: MCPConnection,

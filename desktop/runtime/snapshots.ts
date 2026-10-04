@@ -1,3 +1,11 @@
+import { UriTemplate } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
+import { DomainError } from "./errors";
+import { z } from "zod";
+import {
+  snapshotKinds,
+  type SnapshotConfig,
+  type SnapshotSource,
+} from "../../src/types/snapshot";
 import Ajv from "ajv";
 import type {
   MCPConnection,
@@ -12,6 +20,7 @@ import type {
 import type { MCPRuntime } from "../adapters/mcp";
 import { connectionAvailable } from "../../src/lib/entitlements";
 const semantics: [SnapshotKind, RegExp][] = [
+  ["calendar", /\b(events?|meetings?|calendar)\b/],
   ["mail", /\b(emails?|messages?|inbox)\b/],
   ["inventory", /\b(stock|inventory|products?|items)\b/],
   ["crm", /\b(contacts?|leads?|deals?|customers?)\b/],
@@ -19,6 +28,48 @@ const semantics: [SnapshotKind, RegExp][] = [
   ["accounting", /\b(invoices?|expenses?)\b/],
   ["shipping", /\b(shipments?|deliveries|tracking)\b/],
 ];
+const path = z
+  .string()
+  .max(500)
+  .refine(
+    (v) =>
+      !v
+        .split(".")
+        .some((k) => ["__proto__", "constructor", "prototype"].includes(k)),
+  );
+export const configSchema = z
+  .object({
+    endpoint: z.string().max(4000),
+    source: z.enum(["tool", "resource"]),
+    name: z.string().min(1).max(4000),
+    binding: z.string().min(1).max(128),
+    kind: z.enum(snapshotKinds),
+    arguments: z
+      .record(z.string(), z.unknown())
+      .refine((v) => JSON.stringify(v).length <= 16000),
+    fields: z
+      .object({
+        rows: path.optional(),
+        title: path.optional(),
+        subtitle: path.optional(),
+        preview: path.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+function at(value: unknown, path: string) {
+  for (const key of path.split(".").filter(Boolean)) {
+    if (
+      !object(value) ||
+      !Object.hasOwn(value, key) ||
+      ["__proto__", "constructor", "prototype"].includes(key)
+    )
+      return undefined;
+    value = value[key];
+  }
+  return value;
+}
 export interface SnapshotMapping {
   endpoint: string;
   tool: string;
@@ -35,6 +86,27 @@ export function snapshotRead(
   mappings: ReadonlyArray<SnapshotMapping> = recommendedMappings,
 ): { kind: SnapshotKind; args: Record<string, unknown> } | null {
   if (t.risk !== "read" || t.requiresApproval) return null;
+  if (c.snapshotConfig) {
+    const config = configSchema.safeParse(c.snapshotConfig);
+    if (
+      !config.success ||
+      config.data.endpoint !== c.url ||
+      config.data.source !== "tool" ||
+      config.data.name !== t.name ||
+      config.data.binding !== t.schemaHash
+    )
+      return null;
+    try {
+      return new Ajv({ strict: false }).validate(
+        t.inputSchema ?? { type: "object" },
+        config.data.arguments,
+      )
+        ? { kind: config.data.kind, args: config.data.arguments }
+        : null;
+    } catch {
+      return null;
+    }
+  }
   const tested = mappings.find(
     (m) =>
       m.endpoint === c.url &&
@@ -84,6 +156,15 @@ function rows(raw: unknown, depth = 0): unknown[] | null {
   if (Array.isArray(raw)) return raw;
   if (!object(raw)) return null;
   if (raw.structuredContent) return rows(raw.structuredContent, depth + 1);
+  if (Array.isArray(raw.contents))
+    return rows(
+      {
+        content: raw.contents.map((v) =>
+          object(v) ? { type: "text", text: v.text } : v,
+        ),
+      },
+      depth + 1,
+    );
   if (Array.isArray(raw.content)) {
     for (const block of raw.content) {
       if (
@@ -113,6 +194,8 @@ function rows(raw: unknown, depth = 0): unknown[] | null {
     "orders",
     "invoices",
     "shipments",
+    "events",
+    "deals",
   ])
     if (raw[key] !== undefined) {
       const found = rows(raw[key], depth + 1);
@@ -123,14 +206,55 @@ function rows(raw: unknown, depth = 0): unknown[] | null {
 export function snapshotItems(
   raw: string,
   kind: SnapshotKind,
+  mapping?: SnapshotConfig["fields"],
 ): SnapshotItem[] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return null;
+    return kind === "generic"
+      ? [
+          {
+            id: "text",
+            title: "App context",
+            subtitle: "",
+            preview: raw.slice(0, 4000),
+            status: "",
+            fields: {},
+          },
+        ]
+      : null;
   }
-  const list = rows(parsed);
+  let content: unknown = parsed;
+  if (object(parsed) && parsed.structuredContent)
+    content = parsed.structuredContent;
+  else if (object(parsed)) {
+    const blocks = parsed.content ?? parsed.contents;
+    if (Array.isArray(blocks)) {
+      const block = blocks.find((b) => object(b) && typeof b.text === "string");
+      if (block) {
+        try {
+          content = JSON.parse(block.text);
+        } catch {
+          if (kind === "generic")
+            content = {
+              title: "Resource content",
+              preview: String(block.text).slice(0, 4000),
+            };
+        }
+      }
+    }
+  }
+  let list = mapping?.rows ? at(content, mapping.rows) : rows(parsed);
+  if (
+    !Array.isArray(list) &&
+    kind === "generic" &&
+    object(content) &&
+    !Array.isArray(content.content) &&
+    !Array.isArray(content.contents)
+  )
+    list = [content];
+  if (!Array.isArray(list)) return null;
   if (!list) return null;
   const scalar = (r: Record<string, unknown>, keys: string[]) => {
     for (const k of keys) {
@@ -153,6 +277,7 @@ export function snapshotItems(
         SKU: ["sku", "SKU", "item_code"],
         Stock: ["stock", "stock_quantity", "quantity", "available_stock"],
         Sender: ["sender", "from", "fromAddress", "email"],
+        Starts: ["start", "start_time", "startDateTime"],
         Date: ["date", "created_at", "received_at", "date_created"],
         Total: ["total", "amount", "balance"],
         Tracking: ["tracking_number", "tracking"],
@@ -162,11 +287,23 @@ export function snapshotItems(
         const value = scalar(r, keys);
         if (value) fields[label] = value;
       }
+      if (kind === "generic")
+        for (const [key, value] of Object.entries(r).slice(0, 20)) {
+          if (["string", "number", "boolean"].includes(typeof value))
+            fields[key.slice(0, 100)] = String(value).slice(0, 4000);
+        }
+      const mapped = (key: "title" | "subtitle" | "preview") => {
+        const value = mapping?.[key] ? at(r, mapping[key]!) : undefined;
+        return ["string", "number", "boolean"].includes(typeof value)
+          ? String(value).slice(0, 4000)
+          : "";
+      };
       return {
         id:
           scalar(r, ["id", "messageId", "item_id", "order_id", "invoice_id"]) ||
           String(i),
         title:
+          mapped("title") ||
           scalar(r, [
             "subject",
             "name",
@@ -176,22 +313,21 @@ export function snapshotItems(
             "invoice_number",
             "order_number",
             "tracking_number",
-          ]) || `${kind === "orders" ? "Order" : "Record"} ${i + 1}`,
-        subtitle: scalar(r, [
-          "sender",
-          "from",
-          "email",
-          "sku",
-          "customer_name",
-          "company",
-        ]),
-        preview: scalar(r, [
-          "preview",
-          "snippet",
-          "summary",
-          "description",
-          "body",
-        ]),
+          ]) ||
+          `${kind === "orders" ? "Order" : "Record"} ${i + 1}`,
+        subtitle:
+          mapped("subtitle") ||
+          scalar(r, [
+            "sender",
+            "from",
+            "email",
+            "sku",
+            "customer_name",
+            "company",
+          ]),
+        preview:
+          mapped("preview") ||
+          scalar(r, ["preview", "snippet", "summary", "description", "body"]),
         status: scalar(r, ["status", "state", "fulfillment_status"]),
         fields,
       };
@@ -202,6 +338,11 @@ export class Snapshots {
     string,
     { key: string; value: BusinessSnapshot; at: number }
   >();
+  private generation = 0;
+  private controllers = new Set<AbortController>();
+  get active() {
+    return this.pending.size > 0;
+  }
   private pending = new Map<string, Promise<BusinessSnapshot>>();
   constructor(
     private connection: (id: string) => MCPConnection | undefined,
@@ -214,7 +355,123 @@ export class Snapshots {
     ) => void,
   ) {}
   clear() {
+    this.generation++;
+    for (const controller of this.controllers) controller.abort();
     this.cache.clear();
+  }
+  async drain() {
+    this.clear();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.allSettled([...this.pending.values()]),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Snapshot requests have not stopped.")),
+            10_000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  async sources(id: string): Promise<SnapshotSource[]> {
+    const c = this.connection(id);
+    if (!c || !c.enabled || !connectionAvailable(this.entitlement(), c))
+      throw new DomainError(
+        "ENTITLEMENT",
+        "Connect this app within your plan before configuring context.",
+      );
+    const tools: SnapshotSource[] = c.tools.map((t) => ({
+      source: "tool",
+      name: t.name,
+      label: t.label,
+      binding: t.schemaHash ?? "",
+      eligible:
+        t.enabled && t.risk === "read" && !t.requiresApproval && !!t.schemaHash,
+      reason: !t.enabled
+        ? "Enable this tool in Tools & Permissions first."
+        : t.risk !== "read" || t.requiresApproval
+          ? "Not verified as read-only. Automatic execution is blocked."
+          : snapshotRead(c, t)
+            ? "Automatic read available."
+            : "Select this read source and supply any required parameters.",
+      inputSchema: t.inputSchema,
+    }));
+    try {
+      return [
+        ...tools,
+        ...(await (this.mcp.sources?.(c) ?? Promise.resolve([]))),
+      ];
+    } catch {
+      return [
+        ...tools,
+        {
+          source: "resource",
+          name: "unavailable",
+          label: "Resource discovery",
+          binding: "",
+          eligible: false,
+          reason:
+            "Resource discovery failed. Reconnect and try again; tool sources remain available.",
+        },
+      ];
+    }
+  }
+  async configure(id: string, input: SnapshotConfig | null) {
+    const c = this.connection(id);
+    if (!c) throw new DomainError("INVALID_ARGUMENTS", "Connection not found.");
+    if (input === null) {
+      delete c.snapshotConfig;
+      this.clear();
+      return;
+    }
+    const config = configSchema.parse(input);
+    const source = (await this.sources(id)).find(
+      (s) =>
+        s.source === config.source &&
+        s.name === config.name &&
+        s.binding === config.binding &&
+        s.eligible,
+    );
+    if (!source || config.endpoint !== c.url)
+      throw new DomainError(
+        "INVALID_ARGUMENTS",
+        "Source changed or permission is missing. Discover sources again.",
+      );
+    if (
+      source.source === "tool" &&
+      !new Ajv({ strict: false }).validate(
+        source.inputSchema ?? { type: "object" },
+        config.arguments,
+      )
+    )
+      throw new DomainError(
+        "INVALID_ARGUMENTS",
+        "Parameters do not match the read tool schema. Supply the required fields.",
+      );
+    if (
+      source.source === "resource" &&
+      Object.values(config.arguments).some((v) => typeof v !== "string")
+    )
+      throw new DomainError(
+        "INVALID_ARGUMENTS",
+        "Resource template parameters must be text.",
+      );
+    if (
+      source.template &&
+      new UriTemplate(source.name).variableNames.some(
+        (key) =>
+          typeof config.arguments[key] !== "string" || !config.arguments[key],
+      )
+    )
+      throw new DomainError(
+        "INVALID_ARGUMENTS",
+        "Supply every resource template parameter before saving.",
+      );
+    c.snapshotConfig = config;
+    this.clear();
   }
   async get(id: string, refresh = false): Promise<BusinessSnapshot> {
     const c = this.connection(id);
@@ -224,7 +481,8 @@ export class Snapshots {
       state: "unknown",
       items: [],
       refreshedAt: null,
-      message: "Ask G-Bot about this connection, or review its permissions.",
+      message:
+        "No compatible automatic read was found. Configure a read-only pane source; required parameters or unsupported tool metadata may need attention. AI is optional.",
       sourceTools: [],
     };
     if (
@@ -241,13 +499,76 @@ export class Snapshots {
             ? "Authorization expired. Reconnect to refresh your business context."
             : "Reconnect this app or review your plan. Saved configuration is retained.",
       };
-    const key = JSON.stringify([c.url, c.status, this.entitlement(), c.tools]);
+    const keyFor = () =>
+      JSON.stringify([
+        this.connection(id),
+        this.entitlement(),
+        this.generation,
+      ]);
+    const key = keyFor();
     const prior = this.cache.get(id);
     if (!refresh && prior?.key === key && Date.now() - prior.at < 60_000)
       return prior.value;
     const pending = this.pending.get(id);
     if (pending) return pending;
+    const controller = new AbortController();
+    this.controllers.add(controller);
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(20_000),
+    ]);
     const task = (async () => {
+      if (c.snapshotConfig?.source === "resource") {
+        try {
+          const config = configSchema.parse(c.snapshotConfig);
+          const source = (await this.sources(id)).find(
+            (s) =>
+              s.source === "resource" &&
+              s.name === config.name &&
+              s.binding === config.binding,
+          );
+          if (
+            !source ||
+            config.endpoint !== c.url ||
+            !this.mcp.readResource ||
+            key !== keyFor()
+          )
+            throw Error();
+          const raw = await this.mcp.readResource(
+            c,
+            source,
+            config.arguments,
+            signal,
+          );
+          if (signal.aborted || key !== keyFor()) throw Error();
+          const items = snapshotItems(raw, config.kind, config.fields);
+          if (items === null)
+            return {
+              ...base,
+              state: "unknown" as const,
+              message:
+                "The resource was read but its content needs a field mapping or a supported structured format.",
+            };
+          this.event(id, "Business snapshot refreshed", "completed");
+          return {
+            ...base,
+            kind: config.kind,
+            state: items.length ? ("ready" as const) : ("empty" as const),
+            items,
+            refreshedAt: new Date().toISOString(),
+            sourceTools: [source.label],
+            message: items.length ? "" : "No recent records were returned.",
+          };
+        } catch {
+          this.event(id, "Business snapshot unavailable", "failed");
+          return {
+            ...base,
+            state: "error" as const,
+            message:
+              "Resource unavailable or permission changed. Reconnect, review the pane source and retry.",
+          };
+        }
+      }
       const possible = c.tools
         .map((t) => ({ t, map: snapshotRead(c, t) }))
         .filter((x) => x.map !== null);
@@ -289,7 +610,7 @@ export class Snapshots {
             current,
             currentTool,
             map!.args,
-            AbortSignal.timeout(20_000),
+            signal,
           );
           // Permissions may change while a read is in flight: never display revoked results.
           const after = this.connection(id),
@@ -305,7 +626,16 @@ export class Snapshots {
             !connectionAvailable(this.entitlement(), after)
           )
             throw Error();
-          const items = snapshotItems(raw, map!.kind);
+          if (signal.aborted || key !== keyFor()) throw Error();
+          if (
+            currentTool.outputSchema &&
+            !new Ajv({ strict: false }).validate(
+              currentTool.outputSchema,
+              JSON.parse(raw).structuredContent,
+            )
+          )
+            throw Error();
+          const items = snapshotItems(raw, map!.kind, c.snapshotConfig?.fields);
           if (items === null) {
             failures++;
             continue;
@@ -336,14 +666,24 @@ export class Snapshots {
         : out.items.length
           ? ""
           : "No recent records were returned.";
-      this.cache.set(id, { key, value: out, at: Date.now() });
+      if (key === keyFor() && !signal.aborted)
+        this.cache.set(id, { key, value: out, at: Date.now() });
       return out;
     })();
     this.pending.set(id, task);
     try {
-      return await task;
+      const result = await task;
+      return key === keyFor() && !signal.aborted
+        ? result
+        : {
+            ...base,
+            state: "permission",
+            message:
+              "Context changed while loading. Refresh after reviewing permissions.",
+          };
     } finally {
       this.pending.delete(id);
+      this.controllers.delete(controller);
     }
   }
 }

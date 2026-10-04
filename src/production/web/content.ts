@@ -132,7 +132,7 @@ export const pages: Record<
       ],
       [
         "Contact support",
-        "Use Advanced → Sanitized diagnostics to inspect and export a report, then email gbot@vidinex.ee. Remove any additional private content before sending. Support has no remote access to your workspace.",
+        "Use Help → Open Logs Folder for local sanitized logs, or Help → Copy Diagnostic Information for a minimized support summary. Logs retain up to 30 days within a bounded size. Help → Contact Support opens your email application. Nothing is automatically attached or sent. You can also inspect diagnostics in Advanced Settings. Support has no remote access to your workspace.",
       ],
     ],
   },
@@ -147,7 +147,7 @@ export const pages: Record<
       ],
       [
         "Useful snapshots",
-        "Enabled, safely understood read tools can populate Mail, Inventory, CRM, Orders, Accounting or Shipping panes. G-Bot never guesses required identifiers or enables tools automatically. If a safe snapshot is unavailable, ask G-Bot and review connection details.",
+        "Enabled, safely understood read tools can populate business panes without an AI provider. Use Configure pane to choose an authorized read tool or MCP resource, supply required parameters, and optionally map structured fields. Calendar and generic overviews are supported. G-Bot never guesses required identifiers, enables tools automatically, or runs write/destructive tools to populate panes.",
       ],
       [
         "Recommended acceptance",

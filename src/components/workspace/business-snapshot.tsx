@@ -1,4 +1,5 @@
 "use client";
+import { PaneConfiguration } from "./pane-configuration";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
@@ -9,6 +10,8 @@ import { Badge, Loading, ErrorState } from "@/components/common/ui";
 import { Button } from "@/components/ui/button";
 import type { MCPConnection } from "@/types/domain";
 const headings = {
+  calendar: "Upcoming events",
+  generic: "App overview",
   mail: "Inbox",
   inventory: "Stock overview",
   crm: "Customers & follow-ups",
@@ -31,6 +34,7 @@ export function BusinessSnapshotPane({
       connection.id,
       refresh,
       connection.status,
+      connection.snapshotConfig,
       connection.tools
         .map((t) => `${t.id}:${t.enabled}:${t.schemaHash}`)
         .join("|"),
@@ -117,8 +121,25 @@ export function BusinessSnapshotPane({
                 aria-pressed={item?.id === i.id}
                 onClick={() => setSelected(i.id)}
               >
-                <strong className={snapshot.kind === "inventory" ? "context-content" : undefined} title={i.title}>{i.title}</strong>
-                <p className={snapshot.kind === "mail" || snapshot.kind === "inventory" ? "context-content" : undefined}>{i.subtitle}</p>
+                <strong
+                  className={
+                    snapshot.kind === "inventory"
+                      ? "context-content"
+                      : undefined
+                  }
+                  title={i.title}
+                >
+                  {i.title}
+                </strong>
+                <p
+                  className={
+                    snapshot.kind === "mail" || snapshot.kind === "inventory"
+                      ? "context-content"
+                      : undefined
+                  }
+                >
+                  {i.subtitle}
+                </p>
                 {i.fields.Stock !== undefined ? (
                   <Badge>{i.fields.Stock} in stock</Badge>
                 ) : (
@@ -134,13 +155,32 @@ export function BusinessSnapshotPane({
           className="snapshot-detail"
           aria-label="Selected business record"
         >
-          <h3 className={snapshot.kind === "inventory" ? "context-content" : undefined}>{item.title}</h3>
-          <p className={`record-body ${snapshot.kind === "mail" || snapshot.kind === "inventory" ? "context-content" : ""}`}>{item.preview}</p>
+          <h3
+            className={
+              snapshot.kind === "inventory" ? "context-content" : undefined
+            }
+          >
+            {item.title}
+          </h3>
+          <p
+            className={`record-body ${snapshot.kind === "mail" || snapshot.kind === "inventory" ? "context-content" : ""}`}
+          >
+            {item.preview}
+          </p>
           <dl>
             {Object.entries(item.fields).map(([k, v]) => (
               <div key={k}>
                 <dt className="muted">{k}</dt>
-                <dd className={snapshot.kind === "mail" && k === "Sender" ? "context-content" : undefined} title={v}>{v}</dd>
+                <dd
+                  className={
+                    snapshot.kind === "mail" && k === "Sender"
+                      ? "context-content"
+                      : undefined
+                  }
+                  title={v}
+                >
+                  {v}
+                </dd>
               </div>
             ))}
           </dl>
@@ -172,6 +212,10 @@ export function BusinessSnapshotPane({
         </div>
       )}
       <div className="snapshot-state">
+        <PaneConfiguration
+          key={connection.id + JSON.stringify(connection.snapshotConfig)}
+          connection={connection}
+        />
         <Link className="text-link tiny" href={`/connections/${connection.id}`}>
           MCP Details / Tools & Permissions
         </Link>

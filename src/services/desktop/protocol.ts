@@ -24,17 +24,52 @@ export type Calls = GroupCalls & {
     bytes: number[] | Uint8Array;
   }) => Promise<Attachment>;
   "attachments.url": Services["attachments"]["url"];
+  "desktop.paneSources": (
+    id: string,
+  ) => Promise<import("../../types/snapshot").SnapshotSource[]>;
+  "desktop.configurePane": (
+    id: string,
+    config: import("../../types/snapshot").SnapshotConfig | null,
+  ) => Promise<void>;
+  "desktop.support": () => Promise<void>;
+  "desktop.openLogs": () => Promise<void>;
+  "desktop.copyDiagnostics": () => Promise<void>;
+  "desktop.rendererError": (kind: "error" | "rejection") => Promise<void>;
   "desktop.pickFiles": () => Promise<Attachment[]>;
   "desktop.readPreferences": () => Promise<string | null>;
   "desktop.savePreferences": (value: string | null) => Promise<void>;
-  "desktop.signIn": (provider:"google"|"azure") => Promise<import("../../types/domain").User>;
-  "desktop.verifyMfa": (code:string) => Promise<void>;
+  "desktop.signIn": (
+    provider: "google" | "azure",
+  ) => Promise<import("../../types/domain").User>;
+  "desktop.verifyMfa": (code: string) => Promise<void>;
   "desktop.refreshLicense": () => Promise<unknown>;
   "desktop.openAccount": () => Promise<void>;
-  "desktop.catalog": () => Promise<{catalog:import("../../production/model").Catalog|null;cached:boolean;message:string}>;
-  "desktop.data": (action:"audit"|"audit-retention"|"usage"|"clear-cache"|"clear-activity"|"backup"|"restore"|"json"|"markdown",password:string) => Promise<{message?:string;bytes?:number;freeBytes?:number;lowDisk?:boolean;cancelled?:boolean}>;
+  "desktop.catalog": () => Promise<{
+    catalog: import("../../production/model").Catalog | null;
+    cached: boolean;
+    message: string;
+  }>;
+  "desktop.data": (
+    action:
+      | "audit"
+      | "audit-retention"
+      | "usage"
+      | "clear-cache"
+      | "clear-activity"
+      | "backup"
+      | "restore"
+      | "json"
+      | "markdown",
+    password: string,
+  ) => Promise<{
+    message?: string;
+    bytes?: number;
+    freeBytes?: number;
+    lowDisk?: boolean;
+    cancelled?: boolean;
+  }>;
   "desktop.removeAttachment": (id: string) => Promise<void>;
-  "desktop.retention": (days:0|30|90|180) => Promise<void>;
+  "desktop.retention": (days: 0 | 30 | 90 | 180) => Promise<void>;
   "desktop.openDemo": () => Promise<void>;
   "desktop.diagnostics": () => Promise<string>;
   "desktop.installUpdate": () => Promise<void>;
@@ -44,6 +79,7 @@ export type Result<T> =
   | { ok: true; value: T }
   | { ok: false; error: { code: string; message: string } };
 export interface DesktopBridge {
+  onBack?(listener: () => void): () => void;
   call<K extends Operation>(
     operation: K,
     args: Parameters<Calls[K]>,
@@ -53,6 +89,10 @@ export interface DesktopBridge {
 declare global {
   interface Window {
     gbot?: DesktopBridge;
-    gbotDemo?: { getItem(name: string): string | null; setItem(name: string, value: string | null): Promise<void> };
+    gbotDemo?: {
+      onBack?(listener: () => void): () => void;
+      getItem(name: string): string | null;
+      setItem(name: string, value: string | null): Promise<void>;
+    };
   }
 }

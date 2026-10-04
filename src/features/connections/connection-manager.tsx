@@ -351,7 +351,11 @@ export function ConnectionManager({
       </div>
 
       {!!data.demoConnections?.length && !data.runtime && (
-        <Notice>Workspace Demo examples are fictional context, not saved MCP connections. Add your own configuration here to try the connection setup.</Notice>
+        <Notice>
+          Workspace Demo examples are fictional context, not saved MCP
+          connections. Add your own configuration here to try the connection
+          setup.
+        </Notice>
       )}
       {!data.connections.length && (
         <Empty
@@ -447,13 +451,15 @@ export function ConnectionDetail({ id }: { id: string }) {
         action="Back to connected apps"
       />
     );
-  const available = canActivate(data.entitlement, !data.runtime && data.demoConnections?.includes(c) ? data.demoConnections : data.connections, c.id);
+  const available = canActivate(
+    data.entitlement,
+    !data.runtime && data.demoConnections?.includes(c)
+      ? data.demoConnections
+      : data.connections,
+    c.id,
+  );
   return (
     <div className="page">
-      <Link className="row text-link tiny" href="/connections">
-        <ArrowLeft size={15} />
-        Connected apps
-      </Link>
       <PageHeading
         eyebrow="CONNECTION DETAILS"
         title={c.name}

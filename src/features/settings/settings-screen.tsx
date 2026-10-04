@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { AsyncCheckbox } from "@/components/ui/async-checkbox";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import {
   Check,
   ArrowUpRight,
@@ -71,7 +71,9 @@ function Toggle({
   description,
   checked,
   onChange,
+  disabled = false,
 }: {
+  disabled?: boolean;
   label: string;
   description: string;
   checked: boolean;
@@ -84,6 +86,7 @@ function Toggle({
         <p>{description}</p>
       </span>
       <AsyncCheckbox
+        disabled={disabled}
         className="toggle"
         role="switch"
         aria-label={label}
@@ -104,8 +107,27 @@ export function SettingsScreen() {
     reduced = useWorkspace((s) => s.reducedMotion),
     setMotion = useWorkspace((s) => s.setMotion),
     select = useWorkspace((s) => s.setConversation);
-  const [tab, setTab] = useState("Appearance"),
-    [confirm, setConfirm] = useState<
+  const query = useSearchParams(),
+    path = usePathname();
+  const sections = [
+    "General",
+    "Appearance",
+    "AI providers",
+    "Connected apps",
+    "Security & Privacy",
+    "Advanced",
+    "About",
+  ];
+  const tab = sections.includes(query.get("section") ?? "")
+    ? query.get("section")!
+    : "Appearance";
+  const setTab = (value: string) =>
+    window.history.pushState(
+      null,
+      "",
+      `${path}?section=${encodeURIComponent(value)}`,
+    );
+  const [confirm, setConfirm] = useState<
       "history" | "credentials" | "reset" | null
     >(null),
     [confirmText, setConfirmText] = useState(""),
@@ -249,6 +271,7 @@ export function SettingsScreen() {
             <div className="panel">
               <h2>Everyday preferences</h2>
               <Toggle
+                disabled={!!data.runtime}
                 label="Open workspace on startup"
                 description={
                   data.runtime
@@ -261,6 +284,7 @@ export function SettingsScreen() {
                 }
               />
               <Toggle
+                disabled={!!data.runtime}
                 label="Desktop notifications"
                 description={
                   data.runtime
@@ -311,9 +335,9 @@ export function SettingsScreen() {
                   storage.
                 </p>
                 <Notice>
-                  In your real workspace, provider and tool requests send selected data to
-                  those services. No real provider, OAuth, or MCP calls are made
-                  here.
+                  In your real workspace, provider and tool requests send
+                  selected data to those services. No real provider, OAuth, or
+                  MCP calls are made here.
                 </Notice>
                 <Link className="text-link" href="/connections">
                   Review tool permissions <ArrowUpRight size={14} />
@@ -404,7 +428,8 @@ export function SettingsScreen() {
                   <select
                     value={data.diagnostics.authFailure}
                     onChange={(e) => {
-                      const authFailure = e.currentTarget.value as Diagnostics["authFailure"];
+                      const authFailure = e.currentTarget
+                        .value as Diagnostics["authFailure"];
                       run(() => services.diagnostics.set({ authFailure }));
                     }}
                   >
@@ -515,7 +540,8 @@ export function SettingsScreen() {
                 </Button>
               </div>
               <p className="tiny">
-                The installed G-Bot application includes protected local storage and verified updates. Demo Mode never installs an update.
+                The installed G-Bot application includes protected local storage
+                and verified updates. Demo Mode never installs an update.
               </p>
             </div>
           )}

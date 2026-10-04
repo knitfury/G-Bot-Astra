@@ -1,3 +1,5 @@
+import { DesktopReturn } from "@/components/common/desktop-return";
+import { ContactSupport } from "@/components/common/contact-support";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { pages } from "@/production/web/content";
@@ -17,7 +19,7 @@ export default async function Page({
           <Logo small />
           <strong>G-Bot</strong>
         </Link>
-        <Link href="/portal">My account</Link>
+        <DesktopReturn />
       </header>
       <section className="public-heading">
         <h1>{p.title}</h1>
@@ -33,7 +35,7 @@ export default async function Page({
       </div>
       <footer className="public-footer">
         <Link href="/g-bot">G-Bot</Link>
-        <a href="mailto:gbot@vidinex.ee">gbot@vidinex.ee</a>
+        <ContactSupport />
         <span>Vidinex E-Commerce OÜ · Registry 17603412 · Estonia</span>
       </footer>
     </main>

@@ -1,3 +1,4 @@
+import { configSchema } from "./snapshots";
 import { z } from "zod";
 import type { Operation } from "../../src/services/desktop/protocol";
 const text = z.string().max(200_000),
@@ -56,7 +57,11 @@ const input = z
       "Helpdesk",
       "Calendar",
       "Documents",
-      "Projects", "Ecommerce", "Shipping", "Logistics", "Custom",
+      "Projects",
+      "Ecommerce",
+      "Shipping",
+      "Logistics",
+      "Custom",
     ]),
     auth: z.enum(["OAuth", "Token", "None"]),
     slot: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
@@ -80,7 +85,9 @@ export const schemas: Record<Operation, z.ZodType> = {
   "account.preferences": z.tuple([
     z
       .object({
-        historyRetention: z.union([z.literal(0),z.literal(30),z.literal(90),z.literal(180)]).optional(),
+        historyRetention: z
+          .union([z.literal(0), z.literal(30), z.literal(90), z.literal(180)])
+          .optional(),
         diagnosticsConsent: z.boolean().optional(),
         onboardingStep: z.number().int().min(0).max(6).optional(),
         startup: z.boolean().optional(),
@@ -128,7 +135,12 @@ export const schemas: Record<Operation, z.ZodType> = {
       .object({
         name: short,
         type: short,
-        bytes: z.union([z.instanceof(Uint8Array).refine(v=>v.byteLength<=50*1024*1024),z.array(z.number().int().min(0).max(255)).max(50 * 1024 * 1024)]),
+        bytes: z.union([
+          z
+            .instanceof(Uint8Array)
+            .refine((v) => v.byteLength <= 50 * 1024 * 1024),
+          z.array(z.number().int().min(0).max(255)).max(50 * 1024 * 1024),
+        ]),
       })
       .strict(),
   ]),
@@ -140,18 +152,39 @@ export const schemas: Record<Operation, z.ZodType> = {
   "diagnostics.set": z.tuple([
     z.record(z.string(), z.union([z.string(), z.boolean()])),
   ]),
+  "desktop.paneSources": z.tuple([id]),
+  "desktop.configurePane": z.tuple([id, configSchema.nullable()]),
+  "desktop.support": empty,
+  "desktop.openLogs": empty,
+  "desktop.copyDiagnostics": empty,
+  "desktop.rendererError": z.tuple([z.enum(["error", "rejection"])]),
   "desktop.pickFiles": empty,
   "desktop.readPreferences": empty,
   "desktop.savePreferences": z.tuple([z.string().max(500_000).nullable()]),
   "desktop.installUpdate": empty,
-  "desktop.signIn": z.tuple([z.enum(["google","azure"])]),
+  "desktop.signIn": z.tuple([z.enum(["google", "azure"])]),
   "desktop.verifyMfa": z.tuple([z.string().regex(/^\d{6}$/)]),
   "desktop.refreshLicense": empty,
   "desktop.openAccount": empty,
   "desktop.catalog": empty,
-  "desktop.data": z.tuple([z.enum(["audit","audit-retention","usage","clear-cache","clear-activity","backup","restore","json","markdown"]), z.string().max(1024)]),
+  "desktop.data": z.tuple([
+    z.enum([
+      "audit",
+      "audit-retention",
+      "usage",
+      "clear-cache",
+      "clear-activity",
+      "backup",
+      "restore",
+      "json",
+      "markdown",
+    ]),
+    z.string().max(1024),
+  ]),
   "desktop.removeAttachment": z.tuple([id]),
-  "desktop.retention": z.tuple([z.union([z.literal(0),z.literal(30),z.literal(90),z.literal(180)])]),
+  "desktop.retention": z.tuple([
+    z.union([z.literal(0), z.literal(30), z.literal(90), z.literal(180)]),
+  ]),
   "desktop.openDemo": empty,
   "desktop.diagnostics": empty,
 };
