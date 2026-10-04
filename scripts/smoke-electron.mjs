@@ -588,8 +588,11 @@ try {
           ),
           "--no-sandbox",
           // Playwright appends this switch outside process.argv. Preserve its
-          // existing test keychain so the real relaunch can decrypt the fixture.
-          ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []),
+          // existing keychain mode so the real relaunch can decrypt the fixture.
+          // Packaged launches have no loader and must keep their native keychain.
+          ...(app.commandLine.hasSwitch("use-mock-keychain")
+            ? ["--use-mock-keychain"]
+            : []),
           `--remote-debugging-port=${port}`,
         ],
       });
