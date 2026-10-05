@@ -42,14 +42,14 @@ function connection(): MCPConnection {
     maskedCredential: "",
   };
 }
-test("semantic reads reject mutations, required unknown parameters and ambiguous tools", () => {
+test("safe semantic reads reject mutations and missing parameters, not unfamiliar names", () => {
   const c = connection();
   assert.equal(snapshotRead(c, tool)?.kind, "mail");
   assert.equal(
     snapshotRead(c, { ...tool, name: "send_email", risk: "write" }),
     null,
   );
-  assert.equal(snapshotRead(c, { ...tool, name: "do_work" }), null);
+  assert.equal(snapshotRead(c, { ...tool, name: "do_work" })?.kind, "mail");
   assert.equal(
     snapshotRead(c, {
       ...tool,
@@ -65,7 +65,13 @@ test("semantic reads reject mutations, required unknown parameters and ambiguous
 });
 test("reviewed mapping binds endpoint and schema, never bypasses read policy", () => {
   const c = connection(),
-    t = { ...tool, name: "vendor_api" };
+    t = {
+      ...tool,
+      name: "vendor_api",
+      annotations: {},
+      risk: "write" as const,
+      requiresApproval: true,
+    };
   const m = {
     endpoint: c.url,
     tool: t.name,
@@ -137,7 +143,10 @@ test("real service boundary uses authorized reads, caches, refreshes and retains
   assert.equal((await snapshots.get("c")).state, "disconnected");
 });
 test("unknown custom and empty inventories are honest; long values remain bounded", () => {
-  assert.equal(snapshotItems("unstructured business text", "mail"), null);
+  assert.equal(
+    snapshotItems("unstructured business text", "mail")?.[0].preview,
+    "unstructured business text",
+  );
   assert.deepEqual(snapshotItems('{"items":[]}', "inventory"), []);
   const rows = snapshotItems(
     JSON.stringify({
@@ -159,7 +168,7 @@ test("partial snapshot and permission revocation in flight do not expose revoked
       connect: async () => [],
       disconnect: async () => {},
       call: async () => {
-        if (++calls === 2) throw Error();
+        if (++calls === 1) throw Error();
         return '{"messages":[{"subject":"Hello"}]}';
       },
     },

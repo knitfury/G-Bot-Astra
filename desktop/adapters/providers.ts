@@ -123,7 +123,7 @@ export class HTTPInference implements Inference {
     let url = base,
       body: unknown,
       stream = false;
-    if ((p.type.includes("OpenAI") || isRouter(p.type))) {
+    if (p.type.includes("OpenAI") || isRouter(p.type)) {
       url = base + "/chat/completions";
       stream = true;
       if (p.key) headers.Authorization = `Bearer ${p.key}`;
@@ -351,12 +351,12 @@ export class HTTPInference implements Inference {
         stream &&
         response.headers.get("content-type")?.includes("text/event-stream")
       )
-        return (p.type.includes("OpenAI") || isRouter(p.type))
+        return p.type.includes("OpenAI") || isRouter(p.type)
           ? await this.stream(response, delta)
           : await this.nativeStream(response, p.type, delta);
       const data = object(await boundedJSON(response));
       let result: ModelResult;
-      if ((p.type.includes("OpenAI") || isRouter(p.type))) {
+      if (p.type.includes("OpenAI") || isRouter(p.type)) {
         const message = object(
           (data.choices as { message: unknown }[])?.[0]?.message,
         );
@@ -565,77 +565,64 @@ export class HTTPInference implements Inference {
     response: Response,
     delta: (text: string) => void,
   ): Promise<ModelResult> {
-    const reader = response.body?.getReader();
-    if (!reader)
-      throw new DomainError("CAPABILITY", "Missing response stream.");
-    const decoder = new TextDecoder();
-    let buffer = "",
-      text = "",
-      total = 0,
-      complete = false;
+    let text = "",
+      complete = false,
+      reasoning = false;
     let model: string | undefined;
     const pending = new Map<
       number,
       { id: string; name: string; arguments: string }
     >();
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      total += chunk.value.length;
-      if (total > 4_000_000) {
-        await reader.cancel();
-        throw new DomainError(
-          "CAPABILITY",
-          "Response stream exceeded the size limit.",
-        );
+    for await (const data of sse(response)) {
+      if (data.trim() === "[DONE]") {
+        complete = true;
+        continue;
       }
-      buffer += decoder.decode(chunk.value, { stream: true });
-      let index;
-      while ((index = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, index).trim();
-        buffer = buffer.slice(index + 1);
-        if (!line.startsWith("data:")) continue;
-        if (line.slice(5).trim() === "[DONE]") {
-          complete = true;
-          continue;
-        }
-        let event: {
-          model?: string;
-          choices?: {
-            finish_reason?: string | null;
-            delta?: {
-              content?: string;
-              tool_calls?: {
-                index: number;
-                id?: string;
-                function?: { name?: string; arguments?: string };
-              }[];
-            };
-          }[];
-        };
-        try {
-          event = JSON.parse(line.slice(5));
-        } catch {
-          throw new DomainError("CAPABILITY", "Malformed provider stream.");
-        }
-        if (typeof event.model === "string") model = event.model;
-        if (event.choices?.[0]?.finish_reason) complete = true;
-        const d = event.choices?.[0]?.delta;
-        if (d?.content) {
-          text += d.content;
-          delta(d.content);
-        }
-        for (const c of d?.tool_calls ?? []) {
-          const old = pending.get(c.index) ?? {
-            id: "",
-            name: "",
-            arguments: "",
-          };
-          old.id += c.id ?? "";
-          old.name += c.function?.name ?? "";
-          old.arguments += c.function?.arguments ?? "";
-          pending.set(c.index, old);
-        }
+      let event: Record<string, unknown>;
+      try {
+        event = object(JSON.parse(data));
+      } catch {
+        throw new DomainError("CAPABILITY", "Malformed provider stream.");
+      }
+      if (event.error)
+        throw new DomainError(
+          "NETWORK",
+          "Provider interrupted the response. Retry the request.",
+        );
+      if (typeof event.model === "string") model = event.model;
+      const choice = Array.isArray(event.choices)
+        ? event.choices[0]
+        : undefined;
+      if (!choice) continue; // Usage-only and keep-alive frames have no answer delta.
+      if (choice.finish_reason) complete = true;
+      const d = choice.delta;
+      if (!d) continue;
+      if (d.reasoning_content || d.reasoning || d.reasoning_details)
+        reasoning = true;
+      const visible =
+        typeof d.content === "string"
+          ? d.content
+          : Array.isArray(d.content)
+            ? d.content
+                .filter(
+                  (p: { type?: string; text?: unknown }) =>
+                    p.type === "text" && typeof p.text === "string",
+                )
+                .map((p: { text: string }) => p.text)
+                .join("")
+            : "";
+      if (visible) {
+        text += visible;
+        delta(visible);
+      }
+      for (const c of d.tool_calls ?? []) {
+        if (!Number.isInteger(c.index) || c.index < 0 || c.index > 15)
+          throw new DomainError("CAPABILITY", "Invalid streamed tool index.");
+        const old = pending.get(c.index) ?? { id: "", name: "", arguments: "" };
+        old.id += c.id ?? "";
+        old.name += c.function?.name ?? "";
+        old.arguments += c.function?.arguments ?? "";
+        pending.set(c.index, old);
       }
     }
     if (!complete)
@@ -649,12 +636,17 @@ export class HTTPInference implements Inference {
       calls: calls(
         [...pending.values()].map((c) => ({
           id: c.id,
-          function: { name: c.name, arguments: c.arguments },
+          function: { name: c.name, arguments: c.arguments || "{}" },
         })),
       ),
     };
     if (!text && !result.calls.length)
-      throw new DomainError("CAPABILITY", "Provider returned an empty stream.");
+      throw new DomainError(
+        "CAPABILITY",
+        reasoning
+          ? "Provider finished with reasoning but no answer or tool call. Retry or select another model."
+          : "Provider finished without an answer or tool call. Retry or select another model.",
+      );
     return result;
   }
 }
@@ -688,9 +680,17 @@ async function* sse(response: Response): AsyncGenerator<string> {
           .filter((l) => l.startsWith("data:"))
           .map((l) => l.slice(5).trimStart())
           .join("\n");
-        if (data) yield data;
+        if (data.trim()) yield data;
       }
     }
+    buffer += decoder.decode();
+    const tail = buffer
+      .split("\n")
+      .filter((l) => l.startsWith("data:"))
+      .map((l) => l.slice(5).trimStart())
+      .join("\n")
+      .trim();
+    if (tail) yield tail;
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();

@@ -7,6 +7,9 @@ export const snapshotKinds = [
   "accounting",
   "shipping",
   "generic",
+  "tasks",
+  "support",
+  "files",
 ] as const;
 export type SnapshotKind = (typeof snapshotKinds)[number];
 export interface SnapshotConfig {
@@ -23,7 +26,48 @@ export interface SnapshotConfig {
     preview?: string;
   };
 }
+export interface ContextField {
+  key: string;
+  label: string;
+  role:
+    | "title"
+    | "subtitle"
+    | "identifier"
+    | "timestamp"
+    | "person"
+    | "email"
+    | "status"
+    | "amount"
+    | "currency"
+    | "quantity"
+    | "image"
+    | "description"
+    | "url"
+    | "category"
+    | "value";
+}
+export interface ContextPresentation {
+  type:
+    | "list"
+    | "table"
+    | "cards"
+    | "metrics"
+    | "timeline"
+    | "messages"
+    | "detail"
+    | "document"
+    | "key-value";
+  fields: ContextField[];
+}
 export interface SnapshotSource {
+  description?: string;
+  mimeType?: string;
+  outputSchema?: Record<string, unknown>;
+  score?: number;
+  kind?: SnapshotKind;
+  arguments?: Record<string, unknown>;
+  needs?: string[];
+  safety?: "allowed" | "blocked" | "permission";
   source: "tool" | "resource";
   name: string;
   label: string;
@@ -40,6 +84,7 @@ export interface SnapshotSource {
   authority?: "server-declared" | "signed-catalog";
 }
 export interface SnapshotItem {
+  values?: Record<string, string>;
   id: string;
   title: string;
   subtitle: string;
@@ -48,6 +93,10 @@ export interface SnapshotItem {
   fields: Record<string, string>;
 }
 export interface BusinessSnapshot {
+  presentation?: ContextPresentation;
+  sources?: SnapshotSource[];
+  selectedSource?: string;
+  truncated?: boolean;
   connectionId: string;
   kind: SnapshotKind | null;
   state:
@@ -55,6 +104,7 @@ export interface BusinessSnapshot {
     | "empty"
     | "partial"
     | "unknown"
+    | "configuration"
     | "permission"
     | "disconnected"
     | "error";

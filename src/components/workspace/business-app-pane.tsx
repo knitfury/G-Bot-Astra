@@ -293,7 +293,7 @@ export function BusinessAppPane({
       <div className="pane-content">
         {connection && available ? (
           data.runtime ? (
-            <BusinessSnapshotPane connection={connection} refresh={refresh} />
+            <BusinessSnapshotPane key={connection.id} connection={connection} refresh={refresh} />
           ) : (
             <Records
               key={`${connection.id}-${refresh}`}

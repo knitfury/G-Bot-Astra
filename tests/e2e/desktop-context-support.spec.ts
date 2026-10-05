@@ -84,9 +84,7 @@ test("native panes configure read parameters without AI; production cards never 
   try {
     await page.goto("/workspace");
     await expect(
-      page
-        .getByText("No compatible automatic read was found.", { exact: false })
-        .first(),
+      page.getByText("This source needs", { exact: false }).first(),
     ).toBeVisible();
     await page.getByRole("button", { name: "Configure pane" }).first().click();
     const dialog = page.getByRole("dialog");
@@ -102,9 +100,7 @@ test("native panes configure read parameters without AI; production cards never 
     await dialog
       .getByLabel("Read source", { exact: true })
       .selectOption("tool:read");
-    await dialog
-      .getByLabel("Parameters (JSON)", { exact: false })
-      .fill('{"query":"recent"}');
+    await dialog.getByLabel("query", { exact: true }).fill("recent");
     await dialog.getByLabel("I trust this source", { exact: false }).check();
     await dialog.getByRole("button", { name: "Save pane source" }).click();
     await expect(dialog).not.toBeVisible();

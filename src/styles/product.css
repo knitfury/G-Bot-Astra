@@ -2431,3 +2431,52 @@
   .record-item strong, .record-body { --context-base-size: 12px; }
 }
 .business-pane .context-content { font-size: calc(var(--context-base-size) + 1px); }
+
+
+/* Universal context primitives render external data locally as inert text. */
+.context-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 10px;
+}
+.context-table-scroll {
+  overflow: auto;
+  max-width: 100%;
+}
+.context-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+.context-table th,
+.context-table td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  max-width: 240px;
+  overflow-wrap: anywhere;
+}
+.context-document {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  max-height: 520px;
+  overflow: auto;
+}
+.context-key-values > div,
+.context-metric {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.context-key-values dd {
+  margin: 4px 0 12px;
+  white-space: pre-wrap;
+}
+.context-metric dd {
+  margin: 8px 0 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.context-grid .snapshot-item, .snapshot-list > div > .snapshot-item { width:100%; }

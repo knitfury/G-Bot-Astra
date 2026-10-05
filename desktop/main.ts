@@ -262,12 +262,12 @@ async function boot() {
       return mcp.connect(...args);
     },
     disconnect: (id: string) => mcp.disconnect(id),
-    sources: async (c: import("../src/types/domain").MCPConnection) => {
+    sources: async (c: import("../src/types/domain").MCPConnection, signal?: AbortSignal) => {
       await identity.ensure();
       if (!connectionAvailable(runtime.db.entitlement, c))
         throw Error("Connection unavailable.");
       await catalog.assertAllowed(c.url);
-      return mcp.sources(c);
+      return mcp.sources(c, signal);
     },
     readResource: async (...args: Parameters<typeof mcp.readResource>) => {
       await identity.ensure();

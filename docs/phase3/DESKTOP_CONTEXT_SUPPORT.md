@@ -115,3 +115,64 @@ Owner acceptance:
    read permission removes its pane data. Restart and check saved configuration.
 6. Recheck account plan cards, settings, Back, Help/logs/support, safe cache clearing,
    Restart, real auth/billing and Demo isolation. Do not merge or release yet.
+
+## Universal context engine correction (supersedes the earlier Zoho-specific next step)
+
+The prior code preserved read evidence but still gated usefulness on a short tool-name/category list,
+required manual resource selection, and recognized only fixed response collection keys. Consequently,
+a valid safe MCP could remain blank. Catalog metadata was not a sufficient solution to this product gap.
+
+The existing Snapshots service is now the generic context engine. Its discovery model separately carries
+safety/permission, usefulness score, presentation hint, schema, required parameters and bounded arguments.
+Enabled connections authorize protocol resource reads; resource templates require their actual variables.
+Only enabled tools with read evidence can be considered; metadata text never authorizes execution.
+Resources rank before tools, ready sources before missing-argument sources, with structured collection
+and overview/recency metadata improving usefulness. Selection is deterministic and user-switchable.
+Tools no longer need a recognized operation name or business category. Signed grants remain optional.
+
+All reads stay within the connected MCP client. Resource links, image URLs and embedded resource URIs
+are displayed as inert content, never followed as local/network fetch instructions. Prompts do not execute.
+Resource discovery is bounded to 20 pages/500 sources (an excess is rejected); tool discovery retains its
+existing equivalent limit. Tool result cursors are not chased automatically: hydration reads one bounded
+overview page, with pagination parameters available in configuration. At most three independently safe
+sources are attempted if the preferred source fails; a selected source never silently switches contexts.
+Responses are capped at 200,000 characters, collection output at 50 records, fields at 30 per record,
+with bounded nested traversal and text previews. Permission/schema/source changes discard in-flight results.
+
+Local schema/result inference recognizes semantic roles and normalizes arbitrary nested JSON, plain text,
+embedded resources and resource links. Reusable views cover messages, lists, tables, cards, metrics,
+timelines, detail, documents and key/value fallback. Generic data no longer requires a business-specific
+response envelope. Empty, configuration, permission, disconnected and error states have separate messages.
+Refresh re-discovers current resource authority and re-reads the selected safe source. Source switching is
+scoped to the connection; changing pane connections resets transient source/search selection.
+
+Required business IDs are never fabricated and third-party default IDs are not executed automatically.
+Only bounded pagination controls are synthesized. Ordinary scalar/enum parameters get typed form fields;
+complex JSON and mapping overrides remain under Advanced. Saved configurations continue using existing
+encrypted persistence. The generic engine has no inference-provider dependency and never imports Demo data.
+
+### Independent provider stream investigation
+
+The OpenAI-compatible stream parser duplicated SSE parsing and dropped a trailing event without its final
+newline. It also did not surface provider error frames explicitly. It now uses the shared bounded SSE parser,
+which retains a final data event, ignores empty/comment/usage frames and always releases the reader. Tool-only
+responses remain valid, including zero-argument calls. Reasoning is never rendered; a reasoning-only completed
+response reports that no answer/tool call arrived. Error frames produce a sanitized provider error. Truncated
+streams and timeouts still fail rather than execute incomplete actions. No automatic retry was added.
+These are reproduced parser defects, not a claim to have captured the owner's intermittent provider response.
+
+### Owner acceptance
+
+Install the new configured unsigned Windows artifact without clearing saved data. Connect at least two
+different MCP servers, with no AI provider. Enabled readable resources should populate immediately. For
+annotated tools, retain the existing Tools & Permissions opt-in and enable the intended safe reads. Confirm
+actual records, context switching, refresh and typed required parameters; verify no unread state or external
+record changes. Unknown structured sources should show a table/detail rather than a blank pane. A server
+exposing only unannotated/ambiguous tools must remain blocked: universal presentation cannot manufacture
+execution authority. No vendor template or signed mapping is required for protocol-safe sources.
+
+Automated fixtures exercise Mail, Inventory, CRM, Calendar resources, unknown nested data, dangerous/mixed
+tools and missing arguments. Browser acceptance verifies two simultaneous distinct panes without an AI
+provider, visible business records, live refresh, context switching, unknown tables, blocked dangerous
+operations and a normal Project field. Preserve PR #9's earlier support/account/settings acceptance checks.
+Do not merge, publish a release or change production secrets.

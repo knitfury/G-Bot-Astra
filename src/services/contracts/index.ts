@@ -40,7 +40,11 @@ export interface AIProviderService {
   remove(id: string): Promise<void>;
 }
 export interface MCPConnectionService {
-  snapshot(id: string, refresh?: boolean): Promise<import("@/types/snapshot").BusinessSnapshot>;
+  snapshot(
+    id: string,
+    refresh?: boolean,
+    context?: string,
+  ): Promise<import("@/types/snapshot").BusinessSnapshot>;
   list(): Promise<MCPConnection[]>;
   save(
     input: Pick<

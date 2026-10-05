@@ -279,3 +279,60 @@ test("routers send only Auto using OpenAI protocol and report returned model wit
     undefined,
   );
 });
+test("OpenAI SSE ignores empty/role/usage chunks and preserves a final event without newline", async () => {
+  const frames = [
+    ": heartbeat\n\n",
+    "data:   \n\n",
+    'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n',
+    'data: {"choices":[],"usage":{}}\n\n',
+    'data: {"choices":[{"delta":{"reasoning_content":"PRIVATE"}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"Visible"},"finish_reason":"stop"}]}',
+  ];
+  const bytes = new TextEncoder().encode(frames.join(""));
+  const stream = new ReadableStream({
+    start(c) {
+      for (const b of bytes) c.enqueue(Uint8Array.of(b));
+      c.close();
+    },
+  });
+  const visible: string[] = [];
+  const result = await new HTTPInference(
+    async () =>
+      new Response(stream, {
+        headers: { "content-type": "text/event-stream" },
+      }),
+  ).generate(input, [], [], new AbortController().signal, (x) =>
+    visible.push(x),
+  );
+  assert.equal(result.text, "Visible");
+  assert.equal(visible.join(""), "Visible");
+});
+test("tool-only zero-argument streams are usable; reasoning-only and error frames are reported accurately", async () => {
+  const response = (text: string) =>
+    new HTTPInference(
+      async () =>
+        new Response(text, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
+  const result = await run(
+    response(
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"overview"}}]},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]',
+    ),
+  );
+  assert.equal(result.text, "");
+  assert.deepEqual(result.calls[0].arguments, {});
+  await assert.rejects(
+    () =>
+      run(
+        response(
+          'data: {"choices":[{"delta":{"reasoning_content":"PRIVATE"},"finish_reason":"length"}]}\n\n',
+        ),
+      ),
+    /reasoning but no answer/,
+  );
+  await assert.rejects(
+    () => run(response('data: {"error":{"message":"PRIVATE"}}\n\n')),
+    /Provider interrupted/,
+  );
+});

@@ -1,4 +1,5 @@
 "use client";
+import { humanLabel, isObject } from "@/lib/context-inference";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { desktopCall } from "@/services/desktop/client";
@@ -18,7 +19,11 @@ export function PaneConfiguration({
   connection: MCPConnection;
 }) {
   const [open, setOpen] = useState(false),
-    [selected, setSelected] = useState(""),
+    [selected, setSelected] = useState(
+      connection.snapshotConfig
+        ? `${connection.snapshotConfig.source}:${connection.snapshotConfig.name}`
+        : "",
+    ),
     [filter, setFilter] = useState(""),
     [args, setArgs] = useState(
       JSON.stringify(connection.snapshotConfig?.arguments ?? {}, null, 2),
@@ -102,11 +107,20 @@ export function PaneConfiguration({
                 const next = sources.data?.find(
                   (s) => `${s.source}:${s.name}` === e.target.value,
                 );
+                const saved =
+                  connection.snapshotConfig?.name === next?.name &&
+                  connection.snapshotConfig?.binding === next?.binding
+                    ? connection.snapshotConfig
+                    : undefined;
                 setArgs(
-                  JSON.stringify(next?.defaults?.arguments ?? {}, null, 2),
+                  JSON.stringify(
+                    saved?.arguments ?? next?.arguments ?? {},
+                    null,
+                    2,
+                  ),
                 );
-                setKind(next?.defaults?.kind ?? "generic");
-                setFields(next?.defaults?.fields ?? {});
+                setKind(saved?.kind ?? next?.kind ?? "generic");
+                setFields(saved?.fields ?? next?.defaults?.fields ?? {});
                 setConsent(false);
               }}
             >
@@ -186,21 +200,29 @@ export function PaneConfiguration({
                   </pre>
                 </details>
               )}
-              <label className="field">
-                Parameters (JSON)
-                <textarea
-                  aria-label="Parameters (JSON)"
-                  value={args}
-                  onChange={(e) => setArgs(e.target.value)}
-                  rows={5}
-                  spellCheck={false}
-                />
-                <span className="tiny">
-                  Use account, folder or query values required by this source.
-                  Never enter passwords, tokens or API keys here; authentication
-                  uses the secure connection settings.
-                </span>
-              </label>
+              <ParameterFields
+                schema={source.inputSchema}
+                value={args}
+                change={setArgs}
+              />
+              <details>
+                <summary>Advanced parameters (JSON)</summary>
+                <label className="field">
+                  Parameters (JSON)
+                  <textarea
+                    aria-label="Parameters (JSON)"
+                    value={args}
+                    onChange={(e) => setArgs(e.target.value)}
+                    rows={5}
+                    spellCheck={false}
+                  />
+                  <span className="tiny">
+                    Use account, folder or query values required by this source.
+                    Never enter passwords, tokens or API keys here;
+                    authentication uses the secure connection settings.
+                  </span>
+                </label>
+              </details>
               <label className="field">
                 Presentation
                 <select
@@ -262,5 +284,110 @@ export function PaneConfiguration({
         </div>
       </Dialog>
     </>
+  );
+}
+
+function ParameterFields({
+  schema,
+  value,
+  change,
+}: {
+  schema?: Record<string, unknown>;
+  value: string;
+  change: (v: string) => void;
+}) {
+  let values: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(value);
+    if (isObject(parsed)) values = parsed;
+  } catch {
+    /* Advanced editor will show validation on save. */
+  }
+  const props = isObject(schema?.properties) ? schema.properties : {};
+  const required = Array.isArray(schema?.required) ? schema.required : [];
+  const update = (key: string, v: unknown) =>
+    change(JSON.stringify({ ...values, [key]: v }, null, 2));
+  return (
+    <div className="stack">
+      {Object.entries(props)
+        .slice(0, 30)
+        .map(([key, p]) => {
+          if (!isObject(p)) return null;
+          const label =
+            typeof p.title === "string"
+              ? p.title.slice(0, 120)
+              : humanLabel(key);
+          const options = Array.isArray(p.enum)
+            ? p.enum
+                .filter((x) =>
+                  ["string", "number", "boolean"].includes(typeof x),
+                )
+                .slice(0, 100)
+            : undefined;
+          if (
+            !options &&
+            !["string", "number", "integer", "boolean"].includes(String(p.type))
+          )
+            return <p key={key}>{label} needs an advanced structured value.</p>;
+          return (
+            <label className="field" key={key}>
+              {label}
+              {required.includes(key) ? " (required)" : ""}
+              {options ? (
+                <select
+                  aria-label={label}
+                  value={String(values[key] ?? "")}
+                  onChange={(e) =>
+                    update(
+                      key,
+                      options.find((x) => String(x) === e.target.value),
+                    )
+                  }
+                >
+                  <option value="">Choose a value</option>
+                  {options.map((x) => (
+                    <option key={String(x)} value={String(x)}>
+                      {String(x)}
+                    </option>
+                  ))}
+                </select>
+              ) : p.type === "boolean" ? (
+                <select
+                  aria-label={label}
+                  value={String(values[key] ?? "")}
+                  onChange={(e) =>
+                    update(
+                      key,
+                      e.target.value === ""
+                        ? undefined
+                        : e.target.value === "true",
+                    )
+                  }
+                >
+                  <option value="">Not set</option>
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              ) : (
+                <input
+                  aria-label={label}
+                  type={p.type === "string" ? "text" : "number"}
+                  value={String(values[key] ?? "")}
+                  onChange={(e) =>
+                    update(
+                      key,
+                      e.target.value === ""
+                        ? undefined
+                        : p.type === "string"
+                          ? e.target.value
+                          : Number(e.target.value),
+                    )
+                  }
+                />
+              )}
+            </label>
+          );
+        })}
+    </div>
   );
 }

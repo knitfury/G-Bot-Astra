@@ -104,7 +104,7 @@ export const schemas: Record<Operation, z.ZodType> = {
   "providers.save": z.tuple([provider, id.optional()]),
   "providers.testSaved": z.tuple([id]),
   "providers.remove": z.tuple([id]),
-  "connections.snapshot": z.tuple([id, z.boolean().optional()]),
+  "connections.snapshot": z.tuple([id, z.boolean().optional(), z.string().max(4500).optional()]),
   "tools.selectAll": z.tuple([id, z.boolean()]),
   "connections.list": empty,
   "connections.save": z.tuple([input, id.optional()]),

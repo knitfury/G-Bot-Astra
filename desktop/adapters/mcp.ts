@@ -13,7 +13,10 @@ export interface MCPRuntime {
   paneMappings?(): Promise<
     ReadonlyArray<import("../runtime/snapshots").SnapshotMapping>
   >;
-  sources?(connection: MCPConnection): Promise<SnapshotSource[]>;
+  sources?(
+    connection: MCPConnection,
+    signal?: AbortSignal,
+  ): Promise<SnapshotSource[]>;
   readResource?(
     connection: MCPConnection,
     source: SnapshotSource,
@@ -208,7 +211,10 @@ export class RemoteMCP implements MCPRuntime {
       provider?.close();
     }
   }
-  async sources(c: MCPConnection): Promise<SnapshotSource[]> {
+  async sources(
+    c: MCPConnection,
+    signal = AbortSignal.timeout(20_000),
+  ): Promise<SnapshotSource[]> {
     const client = this.clients.get(c.id);
     if (!client)
       throw new DomainError(
@@ -221,14 +227,28 @@ export class RemoteMCP implements MCPRuntime {
       let cursor: string | undefined;
       let pages = 0;
       do {
-        const result = template
-          ? await client.listResourceTemplates(
-              cursor ? { cursor } : undefined,
-              { timeout: 10_000 },
-            )
-          : await client.listResources(cursor ? { cursor } : undefined, {
-              timeout: 10_000,
-            });
+        let result;
+        try {
+          result = template
+            ? await client.listResourceTemplates(
+                cursor ? { cursor } : undefined,
+                { timeout: 10_000, signal },
+              )
+            : await client.listResources(cursor ? { cursor } : undefined, {
+                timeout: 10_000,
+                signal,
+              });
+        } catch (error) {
+          // Optional listing methods may be unimplemented; retain the other list.
+          if (
+            error &&
+            typeof error === "object" &&
+            "code" in error &&
+            error.code === -32601
+          )
+            break;
+          throw error;
+        }
         const values = (
           "resources" in result ? result.resources : result.resourceTemplates
         ) as Array<{
@@ -236,6 +256,8 @@ export class RemoteMCP implements MCPRuntime {
           uriTemplate?: string;
           name: string;
           title?: string;
+          description?: string;
+          mimeType?: string;
         }>;
         for (const raw of values) {
           const name = String("uri" in raw ? raw.uri : raw.uriTemplate);
@@ -247,9 +269,10 @@ export class RemoteMCP implements MCPRuntime {
             binding: createHash("sha256")
               .update(JSON.stringify(raw))
               .digest("hex"),
+            description: raw.description?.slice(0, 4000),
+            mimeType: raw.mimeType?.slice(0, 200),
             eligible: true,
-            reason:
-              "Read resource from this server; explicit pane permission required.",
+            reason: "Readable MCP resource from this enabled connection.",
             template,
           });
         }

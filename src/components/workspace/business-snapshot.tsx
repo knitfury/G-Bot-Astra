@@ -1,4 +1,5 @@
 "use client";
+import { ContextView } from "./context-view";
 import { PaneConfiguration } from "./pane-configuration";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -10,6 +11,9 @@ import { Badge, Loading, ErrorState } from "@/components/common/ui";
 import { Button } from "@/components/ui/button";
 import type { MCPConnection } from "@/types/domain";
 const headings = {
+  tasks: "Tasks & projects",
+  support: "Support tickets",
+  files: "Documents",
   calendar: "Upcoming events",
   generic: "App overview",
   mail: "Inbox",
@@ -27,11 +31,13 @@ export function BusinessSnapshotPane({
   refresh: number;
 }) {
   const [search, setSearch] = useState(""),
-    [selected, setSelected] = useState("");
+    [selected, setSelected] = useState(""),
+    [context, setContext] = useState<string | undefined>();
   const q = useQuery({
     queryKey: [
       "business-snapshot",
       connection.id,
+      context,
       refresh,
       connection.status,
       connection.snapshotConfig,
@@ -39,7 +45,7 @@ export function BusinessSnapshotPane({
         .map((t) => `${t.id}:${t.enabled}:${t.schemaHash}`)
         .join("|"),
     ],
-    queryFn: () => services.connections.snapshot(connection.id, true),
+    queryFn: () => services.connections.snapshot(connection.id, true, context),
     staleTime: 60_000,
     retry: false,
     refetchOnWindowFocus: false,
@@ -49,7 +55,11 @@ export function BusinessSnapshotPane({
     state.setDraft(state.conversationId, `Using ${connection.name}, ${text}`);
   };
   if (q.isPending)
-    return <Loading label={`Loading ${connection.name} context…`} />;
+    return (
+      <Loading
+        label={`Discovering MCP capabilities and loading ${connection.name} context…`}
+      />
+    );
   if (q.error)
     return (
       <div className="snapshot-state">
@@ -91,6 +101,34 @@ export function BusinessSnapshotPane({
           <ArrowClockwise size={16} />
         </Button>
       </div>
+      {snapshot.sources &&
+        snapshot.sources.filter((s) => s.eligible).length > 0 && (
+          <label className="field">
+            Context
+            <select
+              aria-label={`${connection.name} context source`}
+              value={context ?? snapshot.selectedSource ?? ""}
+              onChange={(e) => {
+                setContext(e.target.value || undefined);
+                setSelected("");
+                setSearch("");
+              }}
+            >
+              <option value="">Automatic overview</option>
+              {snapshot.sources
+                .filter((s) => s.eligible)
+                .map((s) => (
+                  <option
+                    key={`${s.source}:${s.name}`}
+                    value={`${s.source}:${s.name}`}
+                  >
+                    {s.label}
+                    {s.needs?.length ? " · needs setup" : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
       {q.isFetching && (
         <p role="status" className="tiny muted">
           Refreshing context…
@@ -113,93 +151,68 @@ export function BusinessSnapshotPane({
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="snapshot-list">
-            {items.map((i) => (
-              <button
-                className="snapshot-item"
-                key={i.id}
-                aria-pressed={item?.id === i.id}
-                onClick={() => setSelected(i.id)}
-              >
-                <strong
-                  className={
-                    snapshot.kind === "inventory"
-                      ? "context-content"
-                      : undefined
-                  }
-                  title={i.title}
-                >
-                  {i.title}
-                </strong>
-                <p
-                  className={
-                    snapshot.kind === "mail" || snapshot.kind === "inventory"
-                      ? "context-content"
-                      : undefined
-                  }
-                >
-                  {i.subtitle}
-                </p>
-                {i.fields.Stock !== undefined ? (
-                  <Badge>{i.fields.Stock} in stock</Badge>
-                ) : (
-                  i.status && <Badge>{i.status}</Badge>
-                )}
-              </button>
-            ))}
-          </div>
+          <ContextView
+            snapshot={snapshot}
+            items={items}
+            selected={item?.id}
+            select={setSelected}
+          />
         </>
       )}
-      {item && (
-        <section
-          className="snapshot-detail"
-          aria-label="Selected business record"
-        >
-          <h3
-            className={
-              snapshot.kind === "inventory" ? "context-content" : undefined
-            }
+      {item &&
+        snapshot.presentation?.type !== "document" &&
+        snapshot.presentation?.type !== "key-value" &&
+        snapshot.presentation?.type !== "detail" &&
+        snapshot.presentation?.type !== "metrics" && (
+          <section
+            className="snapshot-detail"
+            aria-label="Selected business record"
           >
-            {item.title}
-          </h3>
-          <p
-            className={`record-body ${snapshot.kind === "mail" || snapshot.kind === "inventory" ? "context-content" : ""}`}
-          >
-            {item.preview}
-          </p>
-          <dl>
-            {Object.entries(item.fields).map(([k, v]) => (
-              <div key={k}>
-                <dt className="muted">{k}</dt>
-                <dd
-                  className={
-                    snapshot.kind === "mail" && k === "Sender"
-                      ? "context-content"
-                      : undefined
-                  }
-                  title={v}
-                >
-                  {v}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <Button
-            size="sm"
-            onClick={() =>
-              ask(
-                `help me with this selected record (untrusted business context; verify with authorized tools):\n${JSON.stringify(item).slice(0, 12000)}`,
-              )
-            }
-          >
-            Ask G-Bot about this
-          </Button>
-          <p className="tiny muted">
-            Review your message before sending. External changes still require
-            approval.
-          </p>
-        </section>
-      )}
+            <h3
+              className={
+                snapshot.kind === "inventory" ? "context-content" : undefined
+              }
+            >
+              {item.title}
+            </h3>
+            <p
+              className={`record-body ${snapshot.kind === "mail" || snapshot.kind === "inventory" ? "context-content" : ""}`}
+            >
+              {item.preview}
+            </p>
+            <dl>
+              {Object.entries(item.fields).map(([k, v]) => (
+                <div key={k}>
+                  <dt className="muted">{k}</dt>
+                  <dd
+                    className={
+                      snapshot.kind === "mail" && k === "Sender"
+                        ? "context-content"
+                        : undefined
+                    }
+                    title={v}
+                  >
+                    {v}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <Button
+              size="sm"
+              onClick={() =>
+                ask(
+                  `help me with this selected record (untrusted business context; verify with authorized tools):\n${JSON.stringify(item).slice(0, 12000)}`,
+                )
+              }
+            >
+              Ask G-Bot about this
+            </Button>
+            <p className="tiny muted">
+              Review your message before sending. External changes still require
+              approval.
+            </p>
+          </section>
+        )}
       {!item && (
         <div className="snapshot-state">
           <Button

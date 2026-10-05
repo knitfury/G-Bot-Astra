@@ -408,7 +408,7 @@ export class Runtime {
         },
       },
       connections: {
-        snapshot: (id, refresh) => this.snapshots.get(id, refresh),
+        snapshot: (id, refresh, context) => this.snapshots.get(id, refresh, context),
         list: async () => this.db.connections,
         save: async (input, id) => {
           remoteURL(input.url);

@@ -87,7 +87,7 @@ test("explicit read parameters hydrate without AI; refresh, emptiness, schema an
     },
     () => {},
   );
-  assert.equal((await snapshots.get(c.id)).state, "unknown");
+  assert.equal((await snapshots.get(c.id)).state, "configuration");
   assert.equal(calls, 0);
   await assert.rejects(() =>
     snapshots.configure(c.id, { ...configuration(c), arguments: {} }),
@@ -104,7 +104,7 @@ test("explicit read parameters hydrate without AI; refresh, emptiness, schema an
   assert.equal(calls, 2);
   c.tools[0].enabled = true;
   c.tools[0].schemaHash = "v2";
-  assert.equal((await snapshots.get(c.id, true)).state, "unknown");
+  assert.equal((await snapshots.get(c.id, true)).state, "configuration");
   assert.equal(calls, 2);
 });
 test("write/destructive tools and unclassified tools cannot be configured for automatic reads", async () => {
@@ -128,7 +128,7 @@ test("write/destructive tools and unclassified tools cannot be configured for au
     assert.deepEqual((await s.get(c.id, true)).items, []);
   }
 });
-test("resources require explicit source permission; no AI, no local URL fetch; revocation discards in-flight data", async () => {
+test("resources use enabled connection permission automatically; revocation discards in-flight data", async () => {
   const c = connection();
   c.tools = [];
   let calls = 0,
@@ -168,8 +168,8 @@ test("resources require explicit source permission; no AI, no local URL fetch; r
     },
     () => {},
   );
-  assert.equal((await s.get(c.id)).state, "unknown");
-  assert.equal(calls, 0);
+  assert.equal((await s.get(c.id)).state, "ready");
+  assert.equal(calls, 1);
   await s.configure(c.id, {
     source: "resource",
     name: source.name,
