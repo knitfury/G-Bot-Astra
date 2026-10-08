@@ -1,4 +1,5 @@
 "use client";
+import { Badge } from "@/components/common/ui";
 import type { BusinessSnapshot, SnapshotItem } from "@/types/snapshot";
 export function ContextView({
   snapshot,
@@ -116,21 +117,23 @@ export function ContextView({
             <p
               className={
                 snapshot.kind === "mail" || snapshot.kind === "inventory"
-                  ? "context-content"
-                  : undefined
+                  ? "context-subtitle context-content"
+                  : "context-subtitle"
               }
             >
               {i.subtitle}
             </p>
             {(type === "messages" || type === "cards") && (
-              <p className="context-content">{i.preview}</p>
+              <p className="context-preview context-content">{i.preview}</p>
             )}
             {type === "timeline" &&
               fields
                 .filter((f) => f.role === "timestamp")
                 .map((f) => <p key={f.key}>{i.values?.[f.key]}</p>)}
-            {i.fields.Stock !== undefined && <p>{i.fields.Stock} in stock</p>}
-            {i.status && <span>{i.status}</span>}
+            {i.fields.Stock !== undefined && (
+              <Badge>{i.fields.Stock} in stock</Badge>
+            )}
+            {i.status && <Badge>{i.status}</Badge>}
             {type === "cards" &&
               fields
                 .filter((f) => f.role === "amount" || f.role === "currency")

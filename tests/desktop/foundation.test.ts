@@ -142,6 +142,7 @@ test("OAuth validates CSRF state, accepts one loopback callback and stores token
     access_token: "fake-access",
     token_type: "Bearer",
     refresh_token: "fake-refresh",
+    issuer: "https://auth.example/",
   });
   assert.equal((await oauth.tokens())?.refresh_token, "fake-refresh");
   await oauth.invalidateCredentials("all");
@@ -167,5 +168,50 @@ test("unwrapped legacy data migrates to a versioned envelope", async () => {
   assert.equal(
     JSON.parse(await readFile(join(dir, "legacy"), "utf8")).version,
     1,
+  );
+});
+
+test("OAuth restart preserves issuer bindings and withholds legacy or corrupt credentials", async () => {
+  const { vault } = await vaultFixture();
+  const create = () => new DesktopOAuth("bound", vault, async () => {});
+  const client = {
+    client_id: "client",
+    client_secret: "test-only",
+    issuer: "https://auth.example/",
+  };
+  const tokens = {
+    access_token: "access",
+    token_type: "Bearer",
+    refresh_token: "refresh",
+    issuer: "https://auth.example/",
+  };
+  await create().saveClientInformation(client);
+  await create().saveTokens(tokens);
+  assert.deepEqual(await create().clientInformation(), client);
+  assert.deepEqual(await create().tokens(), tokens);
+  for (const issuer of [
+    undefined,
+    123,
+    "invalid",
+    "http://auth.example/",
+    "https://user:password@auth.example/",
+  ]) {
+    await vault.set(
+      "bound:oauth-client",
+      JSON.stringify({ ...client, issuer }),
+    );
+    await vault.set(
+      "bound:oauth-tokens",
+      JSON.stringify({ ...tokens, issuer }),
+    );
+    assert.equal(await create().clientInformation(), undefined);
+    assert.equal(await create().tokens(), undefined);
+  }
+  await vault.set("bound:oauth-tokens", "{corrupt");
+  assert.equal(await create().tokens(), undefined);
+  assert.equal(
+    await vault.get("bound:oauth-tokens"),
+    "{corrupt",
+    "failed restoration does not erase the vault entry",
   );
 });

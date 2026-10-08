@@ -271,7 +271,11 @@ export function normalizeContext(
         role("title") ||
         Object.values(values)[0] ||
         `Record ${i + 1}`,
-      subtitle: mappedText("subtitle") || role("person", "email", "identifier"),
+      subtitle:
+        mappedText("subtitle") ||
+        role("person", "email") ||
+        values[fields.find((f) => /^sku$/i.test(f.key))?.key ?? ""] ||
+        role("identifier"),
       preview: mappedText("preview") || role("description"),
       status: role("status"),
       fields: details,

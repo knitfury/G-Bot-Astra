@@ -102,7 +102,13 @@ test("business snapshots, bulk permissions, wrapped identifiers and restored set
   await expect(page.locator(".left .snapshot-item strong").first()).toHaveCSS("font-size", "13px"); // Subject unchanged.
   await expect(page.locator(".left .snapshot-detail .record-body")).toHaveCSS("font-size", "12px");
   await expect(page.locator(".right .snapshot-item strong")).toHaveCSS("font-size", "14px");
-  await expect(page.locator(".right .snapshot-item p")).toHaveCSS("font-size", "13px");
+  await expect(page.locator(".right .snapshot-item .context-subtitle")).toHaveCSS("font-size", "13px");
+  await expect(page.locator(".right .snapshot-item .context-preview")).toHaveCSS("font-size", "13px");
+  await expect(page.locator(".right .snapshot-item .context-subtitle")).toHaveText("ARC-01");
+  await expect(page.locator(".right .snapshot-item .context-preview")).toHaveText("Sand finish");
+  await expect(page.locator(".right .snapshot-item .badge")).toHaveText("24 in stock");
+  await expect(page.locator(".right .snapshot-item .badge")).toHaveCSS("font-size", "10px");
+  await expect(page.locator(".left .snapshot-item .badge").first()).toHaveCSS("font-size", "10px");
   await expect(page.locator(".right .snapshot-detail h3")).toHaveCSS("font-size", "16px");
   await expect(page.locator(".right .snapshot-detail .record-body")).toHaveCSS("font-size", "12px");
   await expect(page.locator(".right .snapshot-detail dl")).toHaveCSS("font-size", "12px"); // Stock/date metadata unchanged.
