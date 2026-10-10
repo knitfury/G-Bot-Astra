@@ -776,6 +776,14 @@ export class Snapshots {
           message:
             "Saved source changed or its permission was removed. Review its source and parameters.",
         };
+      if (key !== keyFor() || signal.aborted)
+        return {
+          ...view,
+          choices: [],
+          state: "permission",
+          message:
+            "Access changed during automatic discovery. Refresh after reviewing permissions.",
+        };
       diagnostics.ready = sources.filter(
         (s) => s.eligible && s.readiness === "ready",
       ).length;

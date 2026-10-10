@@ -217,3 +217,46 @@ test("read-looking operations that explicitly mark records read are vetoed", asy
     );
   }
 });
+
+test("revoking access during another dependency discards previously collected business choices", async () => {
+  const { c, engine, mcp } = fixture({ accounts: 2 });
+  const original = mcp.call;
+  c.tools[0].inputSchema = {
+    type: "object",
+    properties: {
+      accountId: { type: "string" },
+      organizationId: { type: "string" },
+    },
+    required: ["accountId", "organizationId"],
+  };
+  c.tools.push({
+    ...c.tools[2],
+    id: "organizations",
+    name: "getOrganizations",
+    schemaHash: "orgs",
+    outputSchema: {
+      type: "object",
+      properties: {
+        records: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { organizationId: { type: "string" } },
+            required: ["organizationId"],
+          },
+        },
+      },
+    },
+  });
+  mcp.call = async (...args) => {
+    if (args[1].name !== "getOrganizations") return original(...args);
+    c.tools[2].enabled = false;
+    return JSON.stringify({
+      structuredContent: { records: [{ organizationId: "actual-org" }] },
+    });
+  };
+  const result = await engine.get(c.id);
+  assert.equal(result.state, "permission");
+  assert.deepEqual(result.choices, []);
+  assert.deepEqual(result.items, []);
+});
