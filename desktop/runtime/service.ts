@@ -408,7 +408,8 @@ export class Runtime {
         },
       },
       connections: {
-        snapshot: (id, refresh, context) => this.snapshots.get(id, refresh, context),
+        snapshot: (id, refresh, context) =>
+          this.snapshots.get(id, refresh, context),
         list: async () => this.db.connections,
         save: async (input, id) => {
           remoteURL(input.url);
@@ -455,6 +456,7 @@ export class Runtime {
           this.db.connections = this.db.connections.filter((c) => c.id !== cid);
           this.db.connections.push({
             id: cid,
+            contextChoices: unchanged ? prior?.contextChoices : undefined,
             snapshotConfig: unchanged ? prior?.snapshotConfig : undefined,
             userConfigured: true,
             slot: input.slot,

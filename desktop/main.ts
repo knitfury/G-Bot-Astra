@@ -558,7 +558,14 @@ async function boot() {
             a[3] as string,
             a[4] as boolean,
           );
-        else if (request.operation === "desktop.configurePane") {
+        else if (request.operation === "desktop.contextChoice") {
+          await runtime.snapshots.choose(
+            a[0] as string,
+            a[1] as string,
+            a[2] as string | number | boolean,
+          );
+          await runtime.save();
+        } else if (request.operation === "desktop.configurePane") {
           await runtime.snapshots.configure(
             a[0] as string,
             a[1] as import("../src/types/snapshot").SnapshotConfig | null,

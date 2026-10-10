@@ -116,6 +116,7 @@ export interface ContextDiagnostics {
   disabled: number;
   blocked: number;
   attempts: {
+    phase?: "discovery";
     source: number;
     outcome: ContextOutcome;
     records: number;
@@ -124,6 +125,8 @@ export interface ContextDiagnostics {
   exhausted: boolean;
 }
 export interface BusinessSnapshot {
+  choices?: ContextChoice[];
+  sections?: { label: string; snapshot: Omit<BusinessSnapshot, "sections"> }[];
   diagnostics?: ContextDiagnostics;
   presentation?: ContextPresentation;
   sources?: SnapshotSource[];
@@ -144,4 +147,11 @@ export interface BusinessSnapshot {
   refreshedAt: string | null;
   message: string;
   sourceTools: string[];
+}
+
+export interface ContextChoice {
+  selected?: string | number | boolean;
+  key: string;
+  label: string;
+  choices: { value: string | number | boolean; label: string }[];
 }

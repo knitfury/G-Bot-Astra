@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { ArrowClockwise } from "@phosphor-icons/react";
+import { desktopCall } from "@/services/desktop/client";
 import { services } from "@/services";
 import { useWorkspace } from "@/stores/workspace";
 import { Badge, Loading, ErrorState } from "@/components/common/ui";
@@ -16,7 +17,7 @@ const headings = {
   files: "Documents",
   calendar: "Upcoming events",
   generic: "App overview",
-  mail: "Inbox",
+  mail: "Messages",
   inventory: "Stock overview",
   crm: "Customers & follow-ups",
   orders: "Recent orders",
@@ -32,6 +33,8 @@ export function BusinessSnapshotPane({
 }) {
   const [search, setSearch] = useState(""),
     [selected, setSelected] = useState(""),
+    [section, setSection] = useState(0),
+    [choiceError, setChoiceError] = useState(""),
     [context, setContext] = useState<string | undefined>();
   const q = useQuery({
     queryKey: [
@@ -41,6 +44,7 @@ export function BusinessSnapshotPane({
       refresh,
       connection.status,
       connection.snapshotConfig,
+      connection.contextChoices,
       connection.tools
         .map((t) => `${t.id}:${t.enabled}:${t.schemaHash}`)
         .join("|"),
@@ -73,7 +77,7 @@ export function BusinessSnapshotPane({
         </Button>
       </div>
     );
-  const snapshot = q.data,
+  const snapshot = q.data.sections?.[section]?.snapshot ?? q.data,
     items = snapshot.items.filter((i) =>
       JSON.stringify(i).toLowerCase().includes(search.toLowerCase()),
     ),
@@ -117,6 +121,7 @@ export function BusinessSnapshotPane({
               value={context ?? ""}
               onChange={(e) => {
                 setContext(e.target.value || undefined);
+                setSection(0);
                 setSelected("");
                 setSearch("");
               }}
@@ -160,6 +165,55 @@ export function BusinessSnapshotPane({
           </p>
         </div>
       )}
+      {snapshot.choices?.map((question) => (
+        <label className="field" key={question.key}>
+          {question.label}
+          <select
+            aria-label={
+              question.selected === undefined
+                ? `Choose ${question.label}`
+                : question.label
+            }
+            value={
+              question.selected === undefined
+                ? ""
+                : question.choices.findIndex(
+                    (choice) => choice.value === question.selected,
+                  )
+            }
+            onChange={async (event) => {
+              const choice = question.choices[Number(event.target.value)];
+              if (!choice) return;
+              try {
+                setChoiceError("");
+                await desktopCall(
+                  "desktop.contextChoice",
+                  connection.id,
+                  question.key,
+                  choice.value,
+                );
+                await q.refetch();
+              } catch (error) {
+                setChoiceError(
+                  error instanceof Error
+                    ? error.message
+                    : "Could not remember this choice.",
+                );
+              }
+            }}
+          >
+            <option value="" disabled>
+              Choose {question.label.toLowerCase()}…
+            </option>
+            {question.choices.map((choice, index) => (
+              <option key={index} value={index}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ))}
+      {choiceError && <p role="alert">{choiceError}</p>}
       {!snapshot.items.length && !!disabledReads.length && (
         <div className="snapshot-state">
           <p>
@@ -189,7 +243,7 @@ export function BusinessSnapshotPane({
             {snapshot.diagnostics.ready} sources ready;{" "}
             {snapshot.diagnostics.configuration} need values;{" "}
             {snapshot.diagnostics.disabled} disabled. Automatic overview checks
-            at most three authorized sources.
+            at most three record sources and six read-only discovery calls.
           </p>
           {snapshot.diagnostics.attempts.map((attempt, i) => (
             <p key={i}>
@@ -222,6 +276,24 @@ export function BusinessSnapshotPane({
             Copy sanitized overview diagnostics
           </Button>
         </details>
+      )}
+      {!!q.data.sections?.length && (
+        <div className="row" role="group" aria-label="Business views">
+          {q.data.sections.map((view, index) => (
+            <Button
+              key={view.label}
+              size="sm"
+              variant={section === index ? "default" : "ghost"}
+              onClick={() => {
+                setSection(index);
+                setSelected("");
+                setSearch("");
+              }}
+            >
+              {view.label}
+            </Button>
+          ))}
+        </div>
       )}
       {!!snapshot.items.length && (
         <>

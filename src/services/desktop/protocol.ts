@@ -34,6 +34,11 @@ export type Calls = GroupCalls & {
     discovery: string,
     consent: boolean,
   ) => Promise<import("../../types/snapshot").ParameterChoices>;
+  "desktop.contextChoice": (
+    id: string,
+    key: string,
+    value: string | number | boolean,
+  ) => Promise<void>;
   "desktop.configurePane": (
     id: string,
     config: import("../../types/snapshot").SnapshotConfig | null,

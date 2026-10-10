@@ -164,6 +164,11 @@ export const schemas: Record<Operation, z.ZodType> = {
     z.string().min(1).max(4000),
     z.boolean(),
   ]),
+  "desktop.contextChoice": z.tuple([
+    id,
+    z.string().min(1).max(16000),
+    z.union([z.string().max(4000), z.number().finite(), z.boolean()]),
+  ]),
   "desktop.configurePane": z.tuple([id, configSchema.nullable()]),
   "desktop.support": empty,
   "desktop.openLogs": empty,

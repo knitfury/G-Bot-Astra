@@ -8,6 +8,10 @@ export function mutationVeto(t: MCPTool): boolean {
     t.risk === "destructive" ||
     t.annotations?.destructiveHint === true ||
     t.annotations?.readOnlyHint === false ||
+    // A read-looking name cannot override an explicit state-changing description.
+    /(?:\bis used to|\bserves the purpose of|\bwill)\s+mark(?:ing)?\b|^(?:this (?:api|tool|operation|action)\s+)?marks?\b/i.test(
+      t.description ?? "",
+    ) ||
     /\b(send|create|update|delete|remove|disable|enable|mark|move|label|apply|archive|unarchive|modify|set|write|admin|refund|purchase|change|flag|unflag|trash|restore|revoke|approve|reject|upload|add|execute|reset|import|attach|cancel|subscribe)\b/i.test(
       words,
     )

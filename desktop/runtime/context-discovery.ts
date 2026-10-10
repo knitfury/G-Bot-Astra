@@ -116,8 +116,9 @@ export function rankSource(
       words,
     )
       ? "administrative"
-      : /\b(accounts?|folders?|workspaces?|projects?)\b/.test(words) &&
-          /list|get|fetch|available/.test(words)
+      : /\b(accounts?|folders?|mailboxes?|workspaces?|projects?|warehouses?|locations?|organizations?)\b/.test(
+            humanLabel(`${source.name} ${source.label}`).toLowerCase(),
+          ) && /list|get|fetch|available/.test(words)
         ? "discovery"
         : business
           ? "business"

@@ -3,6 +3,7 @@ import {
   parameterFields,
   validateParameters,
 } from "../../src/lib/context-parameters";
+import { resolveContextArguments } from "./context-workflow";
 import { argumentPlan, rankSource } from "./context-discovery";
 import { inferKind, normalizeContext } from "../../src/lib/context-inference";
 import { declaredRead, mutationVeto, readReason } from "./read-policy";
@@ -361,6 +362,29 @@ export class Snapshots {
           "No matching values returned. Enter a value from your business app.",
     };
   }
+  async choose(
+    id: string,
+    questionKey: string,
+    value: string | number | boolean,
+  ) {
+    const result = await this.get(id, true);
+    const question = result.choices?.find((q) => q.key === questionKey);
+    const current = this.connection(id);
+    if (!current || !question?.choices.some((c) => c.value === value))
+      throw new DomainError(
+        "INVALID_ARGUMENTS",
+        "This choice changed. Refresh and choose again.",
+      );
+    current.contextChoices = {
+      ...current.contextChoices,
+      [questionKey]: value,
+    };
+    // Keep persisted preference storage bounded.
+    current.contextChoices = Object.fromEntries(
+      Object.entries(current.contextChoices).slice(-30),
+    );
+    this.clear();
+  }
   async configure(id: string, input: SnapshotConfig | null) {
     const c = this.connection(id);
     if (!c) throw new DomainError("INVALID_ARGUMENTS", "Connection not found.");
@@ -490,7 +514,8 @@ export class Snapshots {
         attempts: [],
         exhausted: false,
       };
-      const view = { ...base, sources, diagnostics };
+      const choices: import("../../src/types/snapshot").ContextChoice[] = [];
+      const view = { ...base, sources, diagnostics, choices };
       if (key !== keyFor() || signal.aborted)
         return {
           ...view,
@@ -504,6 +529,232 @@ export class Snapshots {
       const safe = sources.filter(
         (s) => s.eligible && (!chosen || sourceKey(s) === chosen),
       );
+      let discoveryCalls = 0;
+      const automaticArguments = new Map<SnapshotSource, SnapshotConfig>();
+      const unavailableViews: string[] = [];
+      if (!configured) {
+        const memo = new Map<string, Promise<SnapshotItem[]>>();
+        const discoveryRead = async (source: SnapshotSource) => {
+          if (++discoveryCalls > 6 || signal.aborted || key !== keyFor())
+            throw new DomainError(
+              "TOOL_UNAVAILABLE",
+              "Automatic discovery reached its safe limit.",
+            );
+          try {
+            const current = this.connection(id);
+            const fresh = (await this.sources(id, signal)).find(
+              (s) => sourceKey(s) === sourceKey(source),
+            );
+            if (
+              !current ||
+              !fresh?.eligible ||
+              fresh.binding !== source.binding ||
+              !connectionAvailable(this.entitlement(), current) ||
+              key !== keyFor()
+            )
+              throw new DomainError(
+                "TOOL_UNAVAILABLE",
+                "Discovery permissions changed.",
+              );
+            const config: SnapshotConfig = {
+              endpoint: current.url,
+              source: source.source,
+              name: source.name,
+              binding: source.binding,
+              kind: source.kind ?? "generic",
+              arguments: source.arguments ?? {},
+            };
+            let raw: string;
+            if (source.source === "tool") {
+              const tool = current.tools.find(
+                (t) =>
+                  t.name === source.name &&
+                  t.schemaHash === source.binding &&
+                  t.connectionId === id,
+              );
+              const policy =
+                tool?.enabled &&
+                snapshotRead(
+                  { ...current, snapshotConfig: config },
+                  tool,
+                  (await this.mcp.paneMappings?.()) ?? [],
+                );
+              if (!tool || !policy)
+                throw new DomainError(
+                  "TOOL_UNAVAILABLE",
+                  "Discovery is not authorized.",
+                );
+              raw = await this.mcp.call(current, tool, policy.args, signal);
+              if (
+                tool.outputSchema &&
+                !new Ajv({ strict: false, validateFormats: false }).validate(
+                  tool.outputSchema,
+                  JSON.parse(raw).structuredContent,
+                )
+              )
+                throw new DomainError(
+                  "MCP_PROTOCOL",
+                  "Discovery response did not match its schema.",
+                );
+            } else {
+              if (
+                !this.mcp.readResource ||
+                !validateParameters(source.inputSchema, config.arguments).valid
+              )
+                throw new DomainError(
+                  "TOOL_UNAVAILABLE",
+                  "Discovery resource is unavailable.",
+                );
+              raw = await this.mcp.readResource(
+                current,
+                source,
+                config.arguments,
+                signal,
+              );
+            }
+            const after = (await this.sources(id, signal)).find(
+              (s) => sourceKey(s) === sourceKey(source),
+            );
+            if (
+              raw.length > 200_000 ||
+              signal.aborted ||
+              key !== keyFor() ||
+              !after?.eligible ||
+              after.binding !== source.binding
+            )
+              throw new DomainError(
+                "TOOL_UNAVAILABLE",
+                "Discovery changed while reading.",
+              );
+            const result = normalizeContext(
+              raw,
+              source.kind ?? "generic",
+              undefined,
+              source.outputSchema,
+            );
+            diagnostics.attempts.push({
+              phase: "discovery",
+              source: sources.findIndex(
+                (s) => sourceKey(s) === sourceKey(source),
+              ),
+              outcome: result.metadataOnly
+                ? "status-only"
+                : result.items.length
+                  ? "records"
+                  : "empty",
+              records: result.items.length,
+            });
+            this.event(id, "Read automatic context choices", "completed");
+            return result.metadataOnly || result.truncated ? [] : result.items;
+          } catch (error) {
+            diagnostics.attempts.push({
+              phase: "discovery",
+              source: sources.findIndex(
+                (s) => sourceKey(s) === sourceKey(source),
+              ),
+              outcome:
+                error instanceof DomainError &&
+                error.code === "INVALID_ARGUMENTS"
+                  ? "invalid-arguments"
+                  : "tool-error",
+              records: 0,
+              code: error instanceof DomainError ? error.code : "TOOL_FAILED",
+            });
+            this.event(id, "Automatic discovery unavailable", "failed");
+            throw error;
+          }
+        };
+        // Resolve business reads before presenting account/folder lookup records as an overview.
+        for (const target of safe
+          .filter((s) => s.purpose === "business" && s.needs?.length)
+          .slice(0, 3)) {
+          const roles =
+            target.kind === "mail" &&
+            parameterFields(target.inputSchema).some((f) =>
+              /folder/i.test(f.path),
+            )
+              ? selection
+                ? ["Inbox"]
+                : ["Inbox", "Sent"]
+              : [undefined];
+          const variants: SnapshotSource[] = [];
+          for (const role of roles) {
+            let viewLabel = role;
+            const resolved = await resolveContextArguments(
+              target,
+              sources,
+              discoveryRead,
+              memo,
+              new Set(),
+              (question) => {
+                if (role && /folder/i.test(question.label)) {
+                  const matching = question.choices.filter(
+                    (choice) =>
+                      choice.label.trim().toLowerCase() === role.toLowerCase(),
+                  );
+                  if (matching.length === 1) return matching[0].value;
+                  // Unknown/localized folder roles require an explicit business choice.
+                  if (role === "Sent") return null;
+                }
+                const saved = c.contextChoices?.[question.key];
+                if (question.choices.some((choice) => choice.value === saved)) {
+                  if (
+                    question.choices.length > 1 &&
+                    !choices.some((q) => q.key === question.key)
+                  )
+                    choices.push({ ...question, selected: saved });
+                  if (role && /folder/i.test(question.label))
+                    viewLabel = question.choices.find(
+                      (choice) => choice.value === saved,
+                    )?.label;
+                  return saved;
+                }
+                if (
+                  (question.choices.length > 1 ||
+                    (role &&
+                      /folder/i.test(question.label) &&
+                      question.choices.length)) &&
+                  !choices.some((q) => q.key === question.key)
+                )
+                  choices.push(question);
+                return role && /folder/i.test(question.label)
+                  ? null
+                  : undefined;
+              },
+            );
+            if (argumentPlan(resolved.inputSchema, resolved.arguments).valid) {
+              if (viewLabel) resolved.label = viewLabel;
+              variants.push(resolved);
+              automaticArguments.set(resolved, {
+                endpoint: c.url,
+                source: resolved.source,
+                name: resolved.name,
+                binding: resolved.binding,
+                kind: resolved.kind ?? "generic",
+                arguments: resolved.arguments ?? {},
+              });
+            } else if (role) unavailableViews.push(role);
+          }
+          if (variants.length) {
+            safe.splice(safe.indexOf(target), 1, ...variants);
+            const index = sources.findIndex(
+              (s) => sourceKey(s) === sourceKey(target),
+            );
+            sources[index] = {
+              ...target,
+              readiness: "ready",
+              needs: [],
+              reason: "Required values resolved through authorized discovery.",
+            };
+          }
+        }
+        safe.sort(
+          (a, b) =>
+            Number(b.purpose === "business") -
+              Number(a.purpose === "business") ||
+            (b.score ?? 0) - (a.score ?? 0),
+        );
+      }
       const ready = safe.filter(
         (s) =>
           argumentPlan(s.inputSchema, s.arguments).valid && !s.needs?.length,
@@ -524,6 +775,35 @@ export class Snapshots {
             : "configuration",
           message:
             "Saved source changed or its permission was removed. Review its source and parameters.",
+        };
+      diagnostics.ready = sources.filter(
+        (s) => s.eligible && s.readiness === "ready",
+      ).length;
+      diagnostics.configuration = sources.filter(
+        (s) => s.eligible && s.readiness === "configuration",
+      ).length;
+      if (
+        !configured &&
+        choices.some((question) => question.selected === undefined)
+      )
+        return {
+          ...view,
+          state: "configuration",
+          kind: safe.find((s) => s.purpose === "business")?.kind ?? "generic",
+          message:
+            "Choose which business account or location to show. Your choice will be remembered and checked against current access on each refresh.",
+        };
+      if (
+        !chosen &&
+        safe.some((s) => s.purpose === "business" && s.needs?.length) &&
+        !ready.some((s) => s.purpose === "business")
+      )
+        return {
+          ...view,
+          state: "configuration",
+          kind: safe.find((s) => s.purpose === "business")?.kind ?? "generic",
+          message:
+            "Business records need values that could not be safely discovered. Configure pane offers labeled fields. Check that account and location discovery reads are enabled; missing schemas, empty discovery results or server errors may require setup in the connected app.",
         };
       if (!ready.length) {
         if (safe.length)
@@ -556,10 +836,13 @@ export class Snapshots {
       const prior = this.cache.get(id);
       if (!refresh && prior?.key === cacheKey && Date.now() - prior.at < 60_000)
         return prior.value;
+      let recordReads = 0;
       let failures = 0;
       let metadataResponses = 0;
       let lastEmpty: BusinessSnapshot | undefined;
+      const sections: NonNullable<BusinessSnapshot["sections"]> = [];
       for (const source of ready.slice(0, chosen ? 1 : 3)) {
+        recordReads++;
         try {
           const current = this.connection(id);
           if (
@@ -573,7 +856,7 @@ export class Snapshots {
             configured?.source === source.source &&
             configured.name === source.name
               ? configured
-              : undefined;
+              : automaticArguments.get(source);
           let raw: string;
           if (source.source === "resource") {
             if (!this.mcp.readResource) throw Error();
@@ -622,8 +905,9 @@ export class Snapshots {
           if (
             !after?.eligible ||
             after.binding !== source.binding ||
-            JSON.stringify(after.arguments) !==
-              JSON.stringify(source.arguments) ||
+            (!automaticArguments.has(source) &&
+              JSON.stringify(after.arguments) !==
+                JSON.stringify(source.arguments)) ||
             key !== keyFor() ||
             signal.aborted
           )
@@ -637,14 +921,18 @@ export class Snapshots {
           if (normalized.metadataOnly) {
             metadataResponses++;
             diagnostics.attempts.push({
-              source: sources.indexOf(source),
+              source: sources.findIndex(
+                (s) => sourceKey(s) === sourceKey(source),
+              ),
               outcome: "status-only",
               records: 0,
             });
             continue;
           }
           diagnostics.attempts.push({
-            source: sources.indexOf(source),
+            source: sources.findIndex(
+              (s) => sourceKey(s) === sourceKey(source),
+            ),
             outcome: normalized.items.length ? "records" : "empty",
             records: normalized.items.length,
           });
@@ -664,22 +952,51 @@ export class Snapshots {
               : normalized.truncated
                 ? "Showing a bounded overview. Refine the source parameters for a narrower view."
                 : normalized.items.length
-                  ? ""
+                  ? unavailableViews.length
+                    ? `${[...new Set(unavailableViews)].join(" and ")} could not be resolved from the available read sources. Review account/folder choices in Configure pane and discovery permissions in Tools.`
+                    : ""
                   : `${source.label} returned an empty result. Check this source’s account, folder and filters in Configure pane, or choose another source.`,
           };
+          if (
+            !chosen &&
+            (source.kind === "mail" || source.kind === "inventory")
+          ) {
+            out.items = out.items.slice(0, 5);
+            sections.push({ label: source.label, snapshot: out });
+            if (
+              source.kind === "mail" &&
+              ready.some(
+                (s) =>
+                  s !== source &&
+                  s.kind === "mail" &&
+                  !sections.some((section) => section.label === s.label),
+              )
+            )
+              continue;
+          }
           if (!normalized.items.length && !chosen) {
             lastEmpty = out;
             continue;
           }
           this.event(id, "Business context refreshed", "completed");
-          this.cache.set(id, { key: cacheKey, value: out, at: Date.now() });
-          return out;
+          sections.sort(
+            (a, b) =>
+              Number(!!b.snapshot.items.length) -
+              Number(!!a.snapshot.items.length),
+          );
+          const result = sections.length
+            ? { ...sections[0].snapshot, sections }
+            : out;
+          this.cache.set(id, { key: cacheKey, value: result, at: Date.now() });
+          return result;
         } catch (error) {
           failures++;
           const code =
             error instanceof DomainError ? error.code : "TOOL_FAILED";
           diagnostics.attempts.push({
-            source: sources.indexOf(source),
+            source: sources.findIndex(
+              (s) => sourceKey(s) === sourceKey(source),
+            ),
             outcome:
               key !== keyFor() || signal.aborted
                 ? "changed"
@@ -699,12 +1016,28 @@ export class Snapshots {
           message:
             "Access or source settings changed during the read. Refresh after reviewing permissions.",
         };
-      diagnostics.exhausted =
-        !chosen && ready.length > diagnostics.attempts.length;
+      if (sections.some((section) => section.snapshot.items.length)) {
+        sections.sort(
+          (a, b) =>
+            Number(!!b.snapshot.items.length) -
+            Number(!!a.snapshot.items.length),
+        );
+        const result: BusinessSnapshot = {
+          ...sections[0].snapshot,
+          sections,
+          state: failures ? "partial" : "ready",
+          message: failures
+            ? "Some views could not be loaded. Review overview checks and refresh."
+            : "",
+        };
+        this.cache.set(id, { key: cacheKey, value: result, at: Date.now() });
+        return result;
+      }
+      diagnostics.exhausted = !chosen && ready.length > recordReads;
       if (lastEmpty && !failures && !metadataResponses) {
         const out = {
           ...lastEmpty,
-          message: `The ${diagnostics.attempts.length} checked sources returned empty results.${diagnostics.exhausted ? " The automatic read limit was reached; other ready sources were not checked." : ""}${diagnostics.configuration ? " Some sources still need account or filter settings. Open Configure pane to choose values." : " Choose another source or check its filters."}`,
+          message: `The ${recordReads} checked record sources returned empty results.${diagnostics.exhausted ? " The automatic read limit was reached; other ready sources were not checked." : ""}${diagnostics.configuration ? " Some sources still need account or filter settings. Open Configure pane to choose values." : " Choose another source or check its filters."}`,
         };
         this.cache.set(id, { key: cacheKey, value: out, at: Date.now() });
         return out;
