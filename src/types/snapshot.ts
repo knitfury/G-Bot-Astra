@@ -60,6 +60,8 @@ export interface ContextPresentation {
   fields: ContextField[];
 }
 export interface SnapshotSource {
+  purpose?: "business" | "discovery" | "generic" | "status" | "administrative";
+  readiness?: "ready" | "configuration" | "permission" | "blocked";
   description?: string;
   mimeType?: string;
   outputSchema?: Record<string, unknown>;
@@ -92,7 +94,37 @@ export interface SnapshotItem {
   status: string;
   fields: Record<string, string>;
 }
+export interface ParameterChoices {
+  choices: { value: string | number | boolean; label: string }[];
+  message: string;
+}
+export type ContextOutcome =
+  | "records"
+  | "empty"
+  | "status-only"
+  | "missing-parameters"
+  | "disabled"
+  | "blocked"
+  | "invalid-arguments"
+  | "tool-error"
+  | "changed";
+export interface ContextDiagnostics {
+  format: "gbot-context-outcomes-v1";
+  mode: "automatic" | "selected";
+  ready: number;
+  configuration: number;
+  disabled: number;
+  blocked: number;
+  attempts: {
+    source: number;
+    outcome: ContextOutcome;
+    records: number;
+    code?: string;
+  }[];
+  exhausted: boolean;
+}
 export interface BusinessSnapshot {
+  diagnostics?: ContextDiagnostics;
   presentation?: ContextPresentation;
   sources?: SnapshotSource[];
   selectedSource?: string;

@@ -1,3 +1,8 @@
+import {
+  choiceRecordPath,
+  parameterFields,
+  validateParameters,
+} from "../../src/lib/context-parameters";
 import { argumentPlan, rankSource } from "./context-discovery";
 import { inferKind, normalizeContext } from "../../src/lib/context-inference";
 import { declaredRead, mutationVeto, readReason } from "./read-policy";
@@ -265,6 +270,97 @@ export class Snapshots {
       ];
     }
   }
+  async choices(
+    id: string,
+    targetKey: string,
+    fieldPath: string,
+    discoveryKey: string,
+    consent: boolean,
+  ): Promise<import("../../src/types/snapshot").ParameterChoices> {
+    if (!consent)
+      throw new DomainError(
+        "INVALID_ARGUMENTS",
+        "Trust this server before looking up available values.",
+      );
+    const sourceKey = (s: SnapshotSource) => `${s.source}:${s.name}`;
+    const endpoint = this.connection(id)?.url;
+    const sources = await this.sources(id);
+    const target = sources.find(
+      (s) => sourceKey(s) === targetKey && s.eligible,
+    );
+    const discovery = sources.find(
+      (s) =>
+        sourceKey(s) === discoveryKey && s.eligible && s.readiness === "ready",
+    );
+    const field =
+      target &&
+      parameterFields(target.inputSchema).find(
+        (f) => f.path === fieldPath && !f.complex,
+      );
+    const recordPath =
+      field && discovery && choiceRecordPath(discovery.outputSchema, field);
+    if (
+      !target ||
+      !discovery ||
+      !field ||
+      !recordPath ||
+      targetKey === discoveryKey
+    )
+      throw new DomainError(
+        "INVALID_ARGUMENTS",
+        "No ready verified discovery source declares matching values for this field. Enter a value from your business app.",
+      );
+    const result = await this.get(id, true, discoveryKey);
+    const current = await this.sources(id);
+    if (
+      this.connection(id)?.url !== endpoint ||
+      ![target, discovery].every((s) =>
+        current.some(
+          (n) =>
+            sourceKey(n) === sourceKey(s) &&
+            n.eligible &&
+            n.binding === s.binding,
+        ),
+      )
+    )
+      throw new DomainError(
+        "TOOL_UNAVAILABLE",
+        "Discovery permissions changed. Review access and try again.",
+      );
+    const choices: import("../../src/types/snapshot").ParameterChoices["choices"] =
+      [];
+    for (const item of result.items.slice(0, 50)) {
+      const text = item.values?.[recordPath];
+      if (text === undefined) continue;
+      const value =
+        field.schema.type === "string"
+          ? text
+          : field.schema.type === "boolean"
+            ? text === "true"
+              ? true
+              : text === "false"
+                ? false
+                : undefined
+            : Number(text);
+      if (
+        value === undefined ||
+        !validateParameters(field.schema, value).valid ||
+        choices.some((c) => c.value === value)
+      )
+        continue;
+      choices.push({
+        value,
+        label: `${item.title.slice(0, 120)} · ${String(value).slice(0, 120)}`,
+      });
+    }
+    return {
+      choices,
+      message: choices.length
+        ? "Choose a value to use; no source settings have been changed."
+        : result.message ||
+          "No matching values returned. Enter a value from your business app.",
+    };
+  }
   async configure(id: string, input: SnapshotConfig | null) {
     const c = this.connection(id);
     if (!c) throw new DomainError("INVALID_ARGUMENTS", "Connection not found.");
@@ -286,17 +382,13 @@ export class Snapshots {
         "INVALID_ARGUMENTS",
         "Source changed or permission is missing. Discover sources again.",
       );
-    if (
-      source.source === "tool" &&
-      !new Ajv({ strict: false }).validate(
-        source.inputSchema ?? { type: "object" },
-        config.arguments,
-      )
-    )
+    const validation = validateParameters(source.inputSchema, config.arguments);
+    if (!validation.valid)
       throw new DomainError(
         "INVALID_ARGUMENTS",
-        "Parameters do not match the read tool schema. Supply the required fields.",
+        validation.issues.map((i) => i.message).join(" "),
       );
+
     if (
       source.source === "resource" &&
       Object.values(config.arguments).some((v) => typeof v !== "string")
@@ -384,7 +476,21 @@ export class Snapshots {
     const task = (async (): Promise<BusinessSnapshot> => {
       const sources = await this.sources(id, signal);
       const sourceKey = (s: SnapshotSource) => `${s.source}:${s.name}`;
-      const view = { ...base, sources };
+      const diagnostics: NonNullable<BusinessSnapshot["diagnostics"]> = {
+        format: "gbot-context-outcomes-v1",
+        mode: selection || c.snapshotConfig ? "selected" : "automatic",
+        ready: sources.filter((s) => s.eligible && s.readiness === "ready")
+          .length,
+        configuration: sources.filter(
+          (s) => s.eligible && s.readiness === "configuration",
+        ).length,
+        disabled: sources.filter((s) => s.safety === "permission").length,
+        blocked: sources.filter((s) => !s.eligible && s.safety !== "permission")
+          .length,
+        attempts: [],
+        exhausted: false,
+      };
+      const view = { ...base, sources, diagnostics };
       if (key !== keyFor() || signal.aborted)
         return {
           ...view,
@@ -426,16 +532,20 @@ export class Snapshots {
             state: "configuration",
             selectedSource: sourceKey(safe[0]),
             kind: safe[0].kind ?? "generic",
-            message: safe[0].needs?.length
-              ? `This source needs ${safe[0].needs.join(", ")}. Choose values in Configure pane.`
-              : "This source needs valid parameters. Configure pane to continue.",
+            message: `This source needs ${safe[0].needs?.map((path) => parameterFields(safe[0].inputSchema).find((f) => f.path === path)?.label ?? path).join(", ") || "valid values"}. Choose values in Configure pane. Enabled tools still need valid source settings before records can be read.`,
           };
         return {
           ...view,
-          state: sources.some((s) => s.safety === "permission")
+          state: sources.some(
+            (s) =>
+              s.safety === "permission" && (!chosen || sourceKey(s) === chosen),
+          )
             ? "permission"
             : "unknown",
-          message: sources.some((s) => s.safety === "permission")
+          message: sources.some(
+            (s) =>
+              s.safety === "permission" && (!chosen || sourceKey(s) === chosen),
+          )
             ? "Enable a verified read tool in Tools & Permissions to load context."
             : base.message,
         };
@@ -448,6 +558,7 @@ export class Snapshots {
         return prior.value;
       let failures = 0;
       let metadataResponses = 0;
+      let lastEmpty: BusinessSnapshot | undefined;
       for (const source of ready.slice(0, chosen ? 1 : 3)) {
         try {
           const current = this.connection(id);
@@ -498,7 +609,10 @@ export class Snapshots {
                 JSON.parse(raw).structuredContent,
               )
             )
-              throw Error();
+              throw new DomainError(
+                "MCP_PROTOCOL",
+                "The response did not match the declared schema.",
+              );
           }
           if (raw.length > 200_000 || signal.aborted || key !== keyFor())
             throw Error();
@@ -522,8 +636,18 @@ export class Snapshots {
           );
           if (normalized.metadataOnly) {
             metadataResponses++;
+            diagnostics.attempts.push({
+              source: sources.indexOf(source),
+              outcome: "status-only",
+              records: 0,
+            });
             continue;
           }
+          diagnostics.attempts.push({
+            source: sources.indexOf(source),
+            outcome: normalized.items.length ? "records" : "empty",
+            records: normalized.items.length,
+          });
           const out: BusinessSnapshot = {
             ...view,
             ...normalized,
@@ -541,30 +665,72 @@ export class Snapshots {
                 ? "Showing a bounded overview. Refine the source parameters for a narrower view."
                 : normalized.items.length
                   ? ""
-                  : "No records were returned.",
+                  : `${source.label} returned an empty result. Check this source’s account, folder and filters in Configure pane, or choose another source.`,
           };
+          if (!normalized.items.length && !chosen) {
+            lastEmpty = out;
+            continue;
+          }
           this.event(id, "Business context refreshed", "completed");
           this.cache.set(id, { key: cacheKey, value: out, at: Date.now() });
           return out;
-        } catch {
+        } catch (error) {
           failures++;
+          const code =
+            error instanceof DomainError ? error.code : "TOOL_FAILED";
+          diagnostics.attempts.push({
+            source: sources.indexOf(source),
+            outcome:
+              key !== keyFor() || signal.aborted
+                ? "changed"
+                : code === "INVALID_ARGUMENTS"
+                  ? "invalid-arguments"
+                  : "tool-error",
+            records: 0,
+            code,
+          });
           this.event(id, "Business context unavailable", "failed");
         }
       }
-      if (metadataResponses && !failures)
+      if (key !== keyFor() || signal.aborted)
+        return {
+          ...view,
+          state: "permission",
+          message:
+            "Access or source settings changed during the read. Refresh after reviewing permissions.",
+        };
+      diagnostics.exhausted =
+        !chosen && ready.length > diagnostics.attempts.length;
+      if (lastEmpty && !failures && !metadataResponses) {
+        const out = {
+          ...lastEmpty,
+          message: `The ${diagnostics.attempts.length} checked sources returned empty results.${diagnostics.exhausted ? " The automatic read limit was reached; other ready sources were not checked." : ""}${diagnostics.configuration ? " Some sources still need account or filter settings. Open Configure pane to choose values." : " Choose another source or check its filters."}`,
+        };
+        this.cache.set(id, { key: cacheKey, value: out, at: Date.now() });
+        return out;
+      }
+      if (metadataResponses && !failures && !lastEmpty)
         return {
           ...view,
           state: "configuration",
           selectedSource: chosen,
-          message:
-            "The source returned only API status information, not business records. Choose a record source in Context or Configure pane and supply its required parameters.",
+          message: `The source returned only API status information, not business records. Choose a record source in Context or Configure pane and supply its required parameters.${diagnostics.exhausted ? " Automatic fallback reached its read limit; other ready sources were not checked." : ""}`,
         };
+      const errorCodes = diagnostics.attempts.map((a) => a.code);
+      const recovery = errorCodes.some(
+        (c) => c === "MCP_AUTH" || c === "MCP_EXPIRED",
+      )
+        ? " Reconnect this business app to renew its authorization."
+        : errorCodes.includes("TIMEOUT")
+          ? " The server did not respond in time. Try Refresh."
+          : errorCodes.includes("MCP_PROTOCOL")
+            ? " The response did not match the server’s declared schema. Share sanitized diagnostics with its administrator."
+            : "";
       return {
         ...view,
         state: "error",
         selectedSource: chosen,
-        message:
-          "Context could not be loaded. Refresh or review the selected source and parameters.",
+        message: `Business records could not be loaded: ${diagnostics.attempts.filter((a) => a.outcome === "empty").length} empty results, ${metadataResponses} status-only responses, ${failures} failed reads.${recovery}${diagnostics.attempts.some((a) => a.outcome === "invalid-arguments") ? " The server rejected source settings; review the required values in Configure pane." : failures ? " Review the connection and try Refresh; source settings may also need updating." : ""}${diagnostics.configuration ? " Other sources need account or filter settings in Configure pane." : ""}${diagnostics.exhausted ? " Automatic fallback reached its read limit. Choose another ready source to continue." : ""}`,
       };
     })();
     this.pending.set(id, task);

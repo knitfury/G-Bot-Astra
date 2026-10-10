@@ -262,7 +262,10 @@ async function boot() {
       return mcp.connect(...args);
     },
     disconnect: (id: string) => mcp.disconnect(id),
-    sources: async (c: import("../src/types/domain").MCPConnection, signal?: AbortSignal) => {
+    sources: async (
+      c: import("../src/types/domain").MCPConnection,
+      signal?: AbortSignal,
+    ) => {
       await identity.ensure();
       if (!connectionAvailable(runtime.db.entitlement, c))
         throw Error("Connection unavailable.");
@@ -547,6 +550,14 @@ async function boot() {
           value = await diagnostics.record("renderer_failure", "RENDERER");
         else if (request.operation === "desktop.paneSources")
           value = await runtime.snapshots.sources(a[0] as string);
+        else if (request.operation === "desktop.paneChoices")
+          value = await runtime.snapshots.choices(
+            a[0] as string,
+            a[1] as string,
+            a[2] as string,
+            a[3] as string,
+            a[4] as boolean,
+          );
         else if (request.operation === "desktop.configurePane") {
           await runtime.snapshots.configure(
             a[0] as string,

@@ -163,7 +163,7 @@ test("required identifiers are never invented, schema defaults cannot bypass set
   );
   const result = await s.get(c.id);
   assert.equal(result.state, "configuration");
-  assert.match(result.message, /accountId/);
+  assert.match(result.message, /account Id/);
   assert.equal(calls, 0);
   await s.configure(c.id, {
     source: "tool",
@@ -430,15 +430,15 @@ test("automatic mode skips metadata-only sources; explicit selection never reads
   const automatic = await s.get(c.id);
   assert.equal(automatic.state, "ready");
   assert.equal(automatic.items[0].title, "Quote request");
-  assert.deepEqual(calls, ["opaque_operation", "records"]);
+  assert.deepEqual(calls, ["records"]);
   const explicit = await s.get(c.id, true, "tool:opaque_operation");
   assert.equal(explicit.state, "configuration");
   assert.match(explicit.message, /only API status/);
   assert.deepEqual(explicit.items, []);
-  assert.deepEqual(calls, ["opaque_operation", "records", "opaque_operation"]);
+  assert.deepEqual(calls, ["records", "opaque_operation"]);
   c.tools[0].enabled = false;
   await s.get(c.id, true, "tool:opaque_operation");
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 2);
 });
 
 test("enable guidance only identifies disabled verified reads, never mutations or ambiguous tools", async () => {
@@ -474,4 +474,218 @@ test("enable guidance only identifies disabled verified reads, never mutations o
   c.tools = c.tools.slice(1);
   assert.equal((await s.get(c.id, true)).state, "unknown");
   assert.equal(calls, 0);
+});
+
+test("automatic overview continues after empty sources and reports bounded exhaustion", async () => {
+  const c = contextConnection();
+  c.tools = Array.from({ length: 5 }, (_, i) => ({
+    ...c.tools[0],
+    id: `c:${i}`,
+    name: `records_${i}`,
+    label: `Records ${i}`,
+  }));
+  const calls: string[] = [];
+  let populated = true;
+  const s = new Snapshots(
+    () => c,
+    () => entitlementFor("free"),
+    {
+      connect: async () => [],
+      disconnect: async () => {},
+      call: async (_c, t) => {
+        calls.push(t.name);
+        return populated && t.name === "records_1"
+          ? JSON.stringify(contexts.mail)
+          : '{"records":[]}';
+      },
+    },
+    () => {},
+  );
+  const ready = await s.get(c.id);
+  assert.equal(ready.state, "ready");
+  assert.deepEqual(
+    ready.diagnostics?.attempts.map((a) => a.outcome),
+    ["empty", "records"],
+  );
+  populated = false;
+  calls.length = 0;
+  const empty = await s.get(c.id, true);
+  assert.equal(empty.state, "empty");
+  assert.equal(calls.length, 3);
+  assert.equal(empty.diagnostics?.exhausted, true);
+  assert.match(empty.message, /read limit/);
+  calls.length = 0;
+  await s.get(c.id, true, "tool:records_0");
+  assert.equal(calls.length, 1);
+});
+
+test("parameter discovery requires consent, matching schemas and enabled verified reads", async () => {
+  const c = contextConnection();
+  const target = {
+    ...c.tools[0],
+    name: "list_records",
+    id: "target",
+    inputSchema: {
+      type: "object",
+      required: ["accountId"],
+      properties: { accountId: { type: "string", title: "Account" } },
+    },
+  };
+  const discovery = {
+    ...c.tools[0],
+    name: "list_accounts",
+    id: "discovery",
+    outputSchema: {
+      type: "object",
+      required: ["accounts"],
+      properties: {
+        accounts: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              accountId: { type: "string" },
+              name: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+  };
+  c.tools = [target, discovery];
+  let calls = 0;
+  const s = new Snapshots(
+    () => c,
+    () => entitlementFor("free"),
+    {
+      connect: async () => [],
+      disconnect: async () => {},
+      call: async () => {
+        calls++;
+        return JSON.stringify({
+          structuredContent: {
+            accounts: [{ accountId: "actual-1", name: "Business" }],
+          },
+        });
+      },
+    },
+    () => {},
+  );
+  await assert.rejects(
+    s.choices(
+      c.id,
+      "tool:list_records",
+      "accountId",
+      "tool:list_accounts",
+      false,
+    ),
+  );
+  assert.equal(calls, 0);
+  const choices = await s.choices(
+    c.id,
+    "tool:list_records",
+    "accountId",
+    "tool:list_accounts",
+    true,
+  );
+  assert.equal(choices.choices[0].value, "actual-1");
+  assert.equal(calls, 1);
+  assert.equal(c.snapshotConfig, undefined);
+  discovery.enabled = false;
+  await assert.rejects(
+    s.choices(
+      c.id,
+      "tool:list_records",
+      "accountId",
+      "tool:list_accounts",
+      true,
+    ),
+  );
+  assert.equal(calls, 1);
+});
+
+test("overview distinguishes status, server errors, missing values and disabled permissions", async () => {
+  const { DomainError } = await import("../../desktop/runtime/errors");
+  const c = contextConnection();
+  let mode = "status",
+    calls = 0;
+  const s = new Snapshots(
+    () => c,
+    () => entitlementFor("free"),
+    {
+      connect: async () => [],
+      disconnect: async () => {},
+      call: async () => {
+        calls++;
+        if (mode === "invalid")
+          throw new DomainError("INVALID_ARGUMENTS", "PRIVATE_ACCOUNT_VALUE");
+        if (mode === "failure") throw Error("PRIVATE_RESPONSE");
+        return '{"status":"success","code":200}';
+      },
+    },
+    () => {},
+  );
+  assert.equal(
+    (await s.get(c.id)).diagnostics?.attempts[0].outcome,
+    "status-only",
+  );
+  mode = "invalid";
+  const invalid = await s.get(c.id, true);
+  assert.equal(invalid.diagnostics?.attempts[0].outcome, "invalid-arguments");
+  assert.match(invalid.message, /server rejected/);
+  assert.ok(!JSON.stringify(invalid).includes("PRIVATE"));
+  mode = "failure";
+  assert.equal(
+    (await s.get(c.id, true)).diagnostics?.attempts[0].outcome,
+    "tool-error",
+  );
+  c.tools[0].inputSchema = {
+    type: "object",
+    required: ["folderId"],
+    properties: { folderId: { type: "string", title: "Folder" } },
+  };
+  const before = calls;
+  const missing = await s.get(c.id, true);
+  assert.equal(missing.state, "configuration");
+  assert.equal(missing.diagnostics?.configuration, 1);
+  assert.match(missing.message, /Folder/);
+  assert.equal(calls, before);
+  c.tools[0].enabled = false;
+  const disabled = await s.get(c.id, true);
+  assert.equal(disabled.state, "permission");
+  assert.equal(disabled.diagnostics?.disabled, 1);
+  assert.equal(calls, before);
+});
+
+test("automatic fallback skips opaque status-only responses before business data", async () => {
+  const c = contextConnection();
+  c.tools.push({
+    ...c.tools[0],
+    id: "second",
+    name: "opaque_second",
+    label: "Overview",
+  });
+  const calls: string[] = [];
+  const s = new Snapshots(
+    () => c,
+    () => entitlementFor("free"),
+    {
+      connect: async () => [],
+      disconnect: async () => {},
+      call: async (_c, t) => {
+        calls.push(t.name);
+        return t.name === "opaque_operation"
+          ? '{"status":{"code":200}}'
+          : JSON.stringify(contexts.mail);
+      },
+    },
+    () => {},
+  );
+  const result = await s.get(c.id);
+  assert.equal(result.state, "ready");
+  assert.deepEqual(
+    result.diagnostics?.attempts.map((a) => a.outcome),
+    ["status-only", "records"],
+  );
+  assert.equal(calls.length, 2);
 });

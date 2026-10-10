@@ -22,15 +22,46 @@ test("different MCP contexts populate both panes without AI, including unknown d
     ...contextConnection(id, `Fixture ${id}`),
     slot,
   }));
+  f.runtime.db.connections[0].tools[0].label = "Inbox";
+  f.runtime.db.connections[0].tools[0].description = "Recent messages overview";
   f.runtime.db.connections[3].tools = [];
   f.runtime.db.connections[5].tools[0].annotations = {};
   f.runtime.db.connections[5].tools[0].description =
     "Safe inbox read, execute now";
   f.runtime.db.connections[6].tools[0].inputSchema = {
     type: "object",
-    required: ["projectId"],
-    properties: { projectId: { type: "string", title: "Project" } },
+    required: ["path_variables"],
+    properties: {
+      path_variables: {
+        type: "object",
+        required: ["projectId"],
+        properties: {
+          projectId: { type: "string", title: "Project", minLength: 1 },
+        },
+      },
+    },
   };
+  f.runtime.db.connections[6].tools.push({
+    ...contextConnection("required").tools[0],
+    id: "required:projects",
+    name: "list_projects",
+    label: "Projects",
+    outputSchema: {
+      type: "object",
+      properties: {
+        projects: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              projectId: { type: "string" },
+              name: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+  });
   f.runtime.db.connections[0].tools.push({
     ...f.runtime.db.connections[0].tools[0],
     id: "mail:contacts",
@@ -42,6 +73,7 @@ test("different MCP contexts populate both panes without AI, including unknown d
     id: "mail:status",
     name: "status_overview",
     label: "Status list",
+    description: "Server status",
   });
   f.runtime.db.connections[7].tools[0].enabled = false;
   f.runtime.db.connections[7].tools.push({
@@ -67,6 +99,12 @@ test("different MCP contexts populate both panes without AI, including unknown d
   f.runtime.mcp.readResource = async () => JSON.stringify(contexts.calendar);
   f.runtime.mcp.call = async (c, t) => {
     calls[c.id] = (calls[c.id] ?? 0) + 1;
+    if (t.name === "list_projects")
+      return JSON.stringify({
+        structuredContent: {
+          projects: [{ projectId: "actual-project", name: "Customer work" }],
+        },
+      });
     if (t.name === "status_overview")
       return JSON.stringify({
         content: [
@@ -98,6 +136,14 @@ test("different MCP contexts populate both panes without AI, including unknown d
       else if (r.operation === "desktop.savePreferences") value = undefined;
       else if (r.operation === "desktop.paneSources")
         value = await f.runtime.snapshots.sources(r.args[0] as string);
+      else if (r.operation === "desktop.paneChoices")
+        value = await f.runtime.snapshots.choices(
+          r.args[0] as string,
+          r.args[1] as string,
+          r.args[2] as string,
+          r.args[3] as string,
+          r.args[4] as boolean,
+        );
       else if (r.operation === "desktop.configurePane")
         await f.runtime.snapshots.configure(
           r.args[0] as string,
@@ -203,8 +249,11 @@ test("different MCP contexts populate both panes without AI, including unknown d
     await page
       .getByLabel("left pane app", { exact: true })
       .selectOption("required");
-    await expect(left.getByText(/This source needs projectId/)).toBeVisible();
-    expect(calls.required ?? 0).toBe(0);
+    await left
+      .getByLabel("Fixture required context source")
+      .selectOption("tool:opaque_operation");
+    await expect(left.getByText(/This source needs Project/)).toBeVisible();
+    expect(calls.required ?? 0).toBe(1);
     await left.getByRole("button", { name: "Configure pane" }).click();
     const dialog = page.getByRole("dialog");
     await dialog
@@ -213,8 +262,21 @@ test("different MCP contexts populate both panes without AI, including unknown d
     await expect(
       dialog.getByLabel("Parameters (JSON)", { exact: false }),
     ).not.toBeVisible();
-    await dialog.getByLabel("Project", { exact: true }).fill("chosen-project");
     await dialog.getByLabel("I trust this source", { exact: false }).check();
+    await expect(
+      dialog.getByRole("button", { name: "Save pane source" }),
+    ).toBeDisabled();
+    await dialog
+      .getByRole("button", { name: "Load Project choices from Projects" })
+      .click();
+    await dialog.getByLabel("Project discovered choices").selectOption("0");
+    await expect(dialog.getByLabel("Project", { exact: true })).toHaveValue(
+      "actual-project",
+    );
+    await dialog.getByLabel("I trust this source", { exact: false }).check();
+    await expect(
+      dialog.getByRole("button", { name: "Save pane source" }),
+    ).toBeEnabled();
     await dialog.getByRole("button", { name: "Save pane source" }).click();
     await expect(
       left.getByText("New lead", { exact: true }).first(),

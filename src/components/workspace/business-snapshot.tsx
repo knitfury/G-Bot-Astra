@@ -122,17 +122,29 @@ export function BusinessSnapshotPane({
               }}
             >
               <option value="">Automatic overview</option>
-              {snapshot.sources
-                .filter((s) => s.eligible)
-                .map((s) => (
-                  <option
-                    key={`${s.source}:${s.name}`}
-                    value={`${s.source}:${s.name}`}
-                  >
-                    {s.label}
-                    {s.needs?.length ? " · needs setup" : ""}
-                  </option>
-                ))}
+              {([false, true] as const).map((needs) => (
+                <optgroup
+                  key={String(needs)}
+                  label={needs ? "Choose required values" : "Ready to read"}
+                >
+                  {snapshot
+                    .sources!.filter(
+                      (s) =>
+                        s.eligible &&
+                        (s.readiness === "configuration" ||
+                          !!s.needs?.length) === needs,
+                    )
+                    .map((s) => (
+                      <option
+                        key={`${s.source}:${s.name}`}
+                        value={`${s.source}:${s.name}`}
+                      >
+                        {s.label}
+                        {needs ? " · needs setup" : ""}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
             </select>
           </label>
         )}
@@ -169,6 +181,47 @@ export function BusinessSnapshotPane({
             Enable verified read-only tools
           </Link>
         </div>
+      )}
+      {snapshot.diagnostics && (
+        <details className="snapshot-state">
+          <summary>Overview checks and recovery</summary>
+          <p>
+            {snapshot.diagnostics.ready} sources ready;{" "}
+            {snapshot.diagnostics.configuration} need values;{" "}
+            {snapshot.diagnostics.disabled} disabled. Automatic overview checks
+            at most three authorized sources.
+          </p>
+          {snapshot.diagnostics.attempts.map((attempt, i) => (
+            <p key={i}>
+              {snapshot.sources?.[attempt.source]?.label ?? "Read source"}:{" "}
+              {
+                {
+                  records: "Records loaded",
+                  empty: "No matching records",
+                  "status-only": "Server status only",
+                  "missing-parameters": "Choose required values",
+                  disabled: "Enable verified reads",
+                  blocked: "Unavailable under the read policy",
+                  "invalid-arguments": "Server rejected source settings",
+                  "tool-error": "Read failed",
+                  changed: "Access changed",
+                }[attempt.outcome]
+              }{" "}
+              ({attempt.records} records)
+              {attempt.code ? ` · ${attempt.code}` : ""}
+            </p>
+          ))}
+          <Button
+            size="sm"
+            onClick={() =>
+              void navigator.clipboard.writeText(
+                JSON.stringify(snapshot.diagnostics, null, 2),
+              )
+            }
+          >
+            Copy sanitized overview diagnostics
+          </Button>
+        </details>
       )}
       {!!snapshot.items.length && (
         <>

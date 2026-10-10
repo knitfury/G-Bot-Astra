@@ -1,5 +1,14 @@
 "use client";
-import { humanLabel, isObject } from "@/lib/context-inference";
+import { isObject } from "@/lib/context-inference";
+import {
+  choiceRecordPath,
+  parameterFields,
+  requiresAdvancedParameters,
+  parameterValue,
+  setParameter,
+  validateParameterInputs,
+} from "@/lib/context-parameters";
+import type { SnapshotSource, ParameterChoices } from "@/types/snapshot";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { desktopCall } from "@/services/desktop/client";
@@ -46,10 +55,18 @@ export function PaneConfiguration({
   const source = sources.data?.find(
     (s) => `${s.source}:${s.name}` === selected,
   );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(args);
+  } catch {
+    parsed = undefined;
+  }
+  const validation = validateParameterInputs(source?.inputSchema, parsed);
   async function save(reset = false) {
     try {
       setError("");
-      if (!reset && (!source?.eligible || !consent)) return;
+      if (!reset && (!source?.eligible || !consent || !validation.valid))
+        return;
       await action.mutateAsync(() =>
         desktopCall(
           "desktop.configurePane",
@@ -125,18 +142,28 @@ export function PaneConfiguration({
               }}
             >
               <option value="">Choose a source</option>
-              {sources.data
-                ?.filter((s) => s.eligible)
-                .map((s) => (
-                  <option
-                    key={`${s.source}:${s.name}`}
-                    value={`${s.source}:${s.name}`}
-                    disabled={!s.eligible}
-                  >
-                    {s.label} · {s.source}
-                    {!s.eligible ? " · unavailable" : ""}
-                  </option>
-                ))}
+              {([false, true] as const).map((needs) => (
+                <optgroup
+                  key={String(needs)}
+                  label={needs ? "Choose required values" : "Ready to read"}
+                >
+                  {sources.data
+                    ?.filter(
+                      (s) =>
+                        s.eligible &&
+                        (s.readiness === "configuration" ||
+                          !!s.needs?.length) === needs,
+                    )
+                    .map((s) => (
+                      <option
+                        key={`${s.source}:${s.name}`}
+                        value={`${s.source}:${s.name}`}
+                      >
+                        {s.label}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
             </select>
           </label>
           {sources.data && !sources.data.some((s) => s.eligible) && (
@@ -201,28 +228,45 @@ export function PaneConfiguration({
                 </details>
               )}
               <ParameterFields
+                key={selected + source.binding}
                 schema={source.inputSchema}
                 value={args}
                 change={setArgs}
+                connectionId={connection.id}
+                source={source}
+                sources={sources.data ?? []}
+                consent={consent}
               />
-              <details>
-                <summary>Advanced parameters (JSON)</summary>
-                <label className="field">
-                  Parameters (JSON)
-                  <textarea
-                    aria-label="Parameters (JSON)"
-                    value={args}
-                    onChange={(e) => setArgs(e.target.value)}
-                    rows={5}
-                    spellCheck={false}
-                  />
-                  <span className="tiny">
-                    Use account, folder or query values required by this source.
-                    Never enter passwords, tokens or API keys here;
-                    authentication uses the secure connection settings.
-                  </span>
-                </label>
-              </details>
+              {requiresAdvancedParameters(source.inputSchema) && (
+                <details>
+                  <summary>Advanced parameters (JSON)</summary>
+                  <label className="field">
+                    Parameters (JSON)
+                    <textarea
+                      aria-label="Parameters (JSON)"
+                      value={args}
+                      onChange={(e) => setArgs(e.target.value)}
+                      rows={5}
+                      spellCheck={false}
+                    />
+                    <span className="tiny">
+                      Use account, folder or query values required by this
+                      source. Never enter passwords, tokens or API keys here;
+                      authentication uses the secure connection settings.
+                    </span>
+                  </label>
+                </details>
+              )}
+              {!validation.valid && (
+                <div role="status">
+                  <p>Complete the required values before saving.</p>
+                  {validation.issues.map((issue, i) => (
+                    <p className="tiny" key={i}>
+                      {issue.message}
+                    </p>
+                  ))}
+                </div>
+              )}
               <label className="field">
                 Presentation
                 <select
@@ -275,7 +319,12 @@ export function PaneConfiguration({
             </Button>
             <Button
               variant="default"
-              disabled={!source?.eligible || !consent || action.isPending}
+              disabled={
+                !source?.eligible ||
+                !consent ||
+                !validation.valid ||
+                action.isPending
+              }
               onClick={() => void save()}
             >
               Save pane source
@@ -291,91 +340,117 @@ function ParameterFields({
   schema,
   value,
   change,
+  connectionId,
+  source,
+  sources,
+  consent,
 }: {
   schema?: Record<string, unknown>;
   value: string;
   change: (v: string) => void;
+  connectionId: string;
+  source: SnapshotSource;
+  sources: SnapshotSource[];
+  consent: boolean;
 }) {
+  const [loaded, setLoaded] = useState<Record<string, ParameterChoices>>({});
+  const [loading, setLoading] = useState("");
   let values: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(value);
     if (isObject(parsed)) values = parsed;
-  } catch {
-    /* Advanced editor will show validation on save. */
+  } catch {}
+  const update = (path: string, v: unknown) =>
+    change(JSON.stringify(setParameter(values, path, v), null, 2));
+  async function load(path: string, discovery: SnapshotSource) {
+    setLoading(path);
+    const key = `${source.source}:${source.name}` + ":" + path;
+    try {
+      const result = await desktopCall(
+        "desktop.paneChoices",
+        connectionId,
+        `${source.source}:${source.name}`,
+        path,
+        `${discovery.source}:${discovery.name}`,
+        consent,
+      );
+      setLoaded((old) => ({ ...old, [key]: result }));
+    } catch {
+      setLoaded((old) => ({
+        ...old,
+        [key]: {
+          choices: [],
+          message:
+            "Could not load choices. Check this connection’s permissions and try again, or enter a known value.",
+        },
+      }));
+    } finally {
+      setLoading("");
+    }
   }
-  const props = isObject(schema?.properties) ? schema.properties : {};
-  const required = Array.isArray(schema?.required) ? schema.required : [];
-  const update = (key: string, v: unknown) =>
-    change(JSON.stringify({ ...values, [key]: v }, null, 2));
   return (
     <div className="stack">
-      {Object.entries(props)
-        .slice(0, 30)
-        .map(([key, p]) => {
-          if (!isObject(p)) return null;
-          const label =
-            typeof p.title === "string"
-              ? p.title.slice(0, 120)
-              : humanLabel(key);
-          const options = Array.isArray(p.enum)
-            ? p.enum
-                .filter((x) =>
-                  ["string", "number", "boolean"].includes(typeof x),
-                )
-                .slice(0, 100)
-            : undefined;
-          if (
-            !options &&
-            !["string", "number", "integer", "boolean"].includes(String(p.type))
-          )
-            return <p key={key}>{label} needs an advanced structured value.</p>;
+      {parameterFields(schema).map((field) => {
+        const p = field.schema,
+          current = parameterValue(values, field.path);
+        const options = Array.isArray(p.enum)
+          ? p.enum
+              .filter((x) => ["string", "number", "boolean"].includes(typeof x))
+              .slice(0, 100)
+          : undefined;
+        const result =
+          loaded[`${source.source}:${source.name}` + ":" + field.path];
+        const discovery = sources.filter(
+          (s) =>
+            `${s.source}:${s.name}` !== `${source.source}:${source.name}` &&
+            s.eligible &&
+            s.readiness === "ready" &&
+            choiceRecordPath(s.outputSchema, field),
+        );
+        if (field.complex)
           return (
-            <label className="field" key={key}>
-              {label}
-              {required.includes(key) ? " (required)" : ""}
-              {options ? (
+            <p key={field.path}>
+              {field.label} requires a structured value in Advanced parameters.
+            </p>
+          );
+        return (
+          <div key={field.path} className="stack">
+            <label className="field">
+              {field.label}
+              {field.required ? " (required)" : ""}
+              {options || p.type === "boolean" ? (
                 <select
-                  aria-label={label}
-                  value={String(values[key] ?? "")}
+                  aria-label={field.label}
+                  value={String(current ?? "")}
                   onChange={(e) =>
                     update(
-                      key,
-                      options.find((x) => String(x) === e.target.value),
+                      field.path,
+                      e.target.value === ""
+                        ? undefined
+                        : options
+                          ? options.find((x) => String(x) === e.target.value)
+                          : e.target.value === "true",
                     )
                   }
                 >
                   <option value="">Choose a value</option>
-                  {options.map((x) => (
+                  {(options ?? [true, false]).map((x) => (
                     <option key={String(x)} value={String(x)}>
-                      {String(x)}
+                      {typeof x === "boolean" ? (x ? "Yes" : "No") : String(x)}
                     </option>
                   ))}
                 </select>
-              ) : p.type === "boolean" ? (
-                <select
-                  aria-label={label}
-                  value={String(values[key] ?? "")}
-                  onChange={(e) =>
-                    update(
-                      key,
-                      e.target.value === ""
-                        ? undefined
-                        : e.target.value === "true",
-                    )
-                  }
-                >
-                  <option value="">Not set</option>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
               ) : (
                 <input
-                  aria-label={label}
+                  aria-label={field.label}
                   type={p.type === "string" ? "text" : "number"}
-                  value={String(values[key] ?? "")}
+                  value={String(current ?? "")}
+                  min={typeof p.minimum === "number" ? p.minimum : undefined}
+                  max={typeof p.maximum === "number" ? p.maximum : undefined}
+                  step={p.type === "integer" ? 1 : "any"}
                   onChange={(e) =>
                     update(
-                      key,
+                      field.path,
                       e.target.value === ""
                         ? undefined
                         : p.type === "string"
@@ -385,9 +460,53 @@ function ParameterFields({
                   }
                 />
               )}
+              {field.description && (
+                <span className="tiny muted">{field.description}</span>
+              )}
             </label>
-          );
-        })}
+            {!!discovery.length && (
+              <div>
+                <p className="tiny">
+                  After confirming trust below, load choices from an enabled
+                  read-only source. No value is selected automatically.
+                </p>
+                {discovery.slice(0, 3).map((s) => (
+                  <Button
+                    key={`${s.source}:${s.name}`}
+                    size="sm"
+                    disabled={!consent || !!loading}
+                    onClick={() => void load(field.path, s)}
+                  >
+                    Load {field.label} choices from {s.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {result && (
+              <div role="status">
+                <p className="tiny">{result.message}</p>
+                {!!result.choices.length && (
+                  <select
+                    aria-label={`${field.label} discovered choices`}
+                    value=""
+                    onChange={(e) => {
+                      const choice = result.choices[Number(e.target.value)];
+                      if (choice) update(field.path, choice.value);
+                    }}
+                  >
+                    <option value="">Choose a discovered value</option>
+                    {result.choices.map((c, i) => (
+                      <option key={i} value={i}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
