@@ -176,3 +176,37 @@ tools and missing arguments. Browser acceptance verifies two simultaneous distin
 provider, visible business records, live refresh, context switching, unknown tables, blocked dangerous
 operations and a normal Project field. Preserve PR #9's earlier support/account/settings acceptance checks.
 Do not merge, publish a release or change production secrets.
+
+
+## Owner-test follow-up: automatic selection, API envelopes and disabled reads
+
+Reviewed the owner's screenshot and attached discovery log before this change. The screenshot
+shows Automatic overview replaced by the resolved personal-task source, with success/200
+response fields rendered as business context. The supplied log contains tool names and risk
+classifications, not raw tool responses or complete read-authority/schema metadata. It cannot
+establish why that server returned no records or authorize a new provider-specific read grant.
+
+The Context selector now tracks the user's automatic/explicit choice independently of the
+resolved source. Refresh retains the choice; switching connections still resets transient state.
+Generic normalization unwraps recognized API status/payload envelopes in MCP text and structured
+results. It renders nested records, preserves real empty collections, business status fields,
+documents and arbitrary metrics, and sanitizes error envelopes. A success-only envelope is not
+a record: automatic discovery continues within its existing three-source read bound; explicit
+selection stays scoped and shows source/parameter setup guidance. It never invents account IDs.
+
+Disabled-tool recovery lists only tools backed by server-declared or exact signed-catalog read
+authority, never ambiguous tools or mutation-vetoed operations. Navigation instructions name
+Your Connections → the connection → Tools, with a direct link opening that tab. Permissions
+remain opt-in; enable the reviewed tool, return and refresh, then supply required parameters in
+Configure pane. No automatic enablement, Demo data fallback or changes to credential storage.
+
+Regression coverage includes automatic selection after refresh and explicit switching, the
+screenshot-shaped status-only response, actual records inside success envelopes, mixed MCP text
+blocks, honest empty arrays, preserved custom metrics/business statuses, sanitized API failures,
+bounded automatic fallback versus explicit selection, and safe permission guidance/deep-linking.
+
+Owner acceptance: retain existing saved data, use this commit's configured unsigned installer,
+check Automatic overview before/after refresh, select a real record source and supply its required
+parameters, then disable its read tools and verify the guidance/link. Enable only the intended
+verified reads, return to the pane and refresh. Recheck both panes and Demo isolation. No migrations,
+production credential changes, release publication or merge are part of this follow-up.

@@ -16,6 +16,7 @@ test("different MCP contexts populate both panes without AI, including unknown d
     "unknown",
     "dangerous",
     "required",
+    "disabled",
   ];
   f.runtime.db.connections = ids.map((id, slot) => ({
     ...contextConnection(id, `Fixture ${id}`),
@@ -36,6 +37,19 @@ test("different MCP contexts populate both panes without AI, including unknown d
     name: "contacts_overview",
     label: "Contacts",
   });
+  f.runtime.db.connections[0].tools.push({
+    ...f.runtime.db.connections[0].tools[0],
+    id: "mail:status",
+    name: "status_overview",
+    label: "Status list",
+  });
+  f.runtime.db.connections[7].tools[0].enabled = false;
+  f.runtime.db.connections[7].tools.push({
+    ...f.runtime.db.connections[7].tools[0],
+    id: "disabled:delete",
+    name: "delete_email",
+    label: "Delete mail",
+  });
   const calls: Record<string, number> = {};
   f.runtime.mcp.sources = async (c) =>
     c.id === "calendar"
@@ -53,6 +67,18 @@ test("different MCP contexts populate both panes without AI, including unknown d
   f.runtime.mcp.readResource = async () => JSON.stringify(contexts.calendar);
   f.runtime.mcp.call = async (c, t) => {
     calls[c.id] = (calls[c.id] ?? 0) + 1;
+    if (t.name === "status_overview")
+      return JSON.stringify({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              status: "success",
+              data: { status: { code: 200, description: "success" } },
+            }),
+          },
+        ],
+      });
     if (t.name === "contacts_overview")
       return JSON.stringify({ contacts: [{ name: "Contact Alice" }] });
     return JSON.stringify(
@@ -106,6 +132,24 @@ test("different MCP contexts populate both panes without AI, including unknown d
       right.getByText("Desk lamp", { exact: true }).first(),
     ).toBeVisible();
     expect(f.runtime.db.providers).toHaveLength(0);
+    await expect(left.getByLabel("Fixture mail context source")).toHaveValue(
+      "",
+    );
+    await expect(
+      left.getByText("data status code", { exact: true }),
+    ).toHaveCount(0);
+    await left
+      .getByLabel("Fixture mail context source")
+      .selectOption("tool:status_overview");
+    await expect(left.getByText(/only API status information/)).toBeVisible();
+    await expect(left.getByText("200", { exact: true })).toHaveCount(0);
+    await expect(left.getByLabel("Fixture mail context source")).toHaveValue(
+      "tool:status_overview",
+    );
+    await left.getByLabel("Fixture mail context source").selectOption("");
+    await expect(
+      left.getByText("Quote request", { exact: true }).first(),
+    ).toBeVisible();
     const before = calls.mail;
     await left
       .getByRole("button", { name: "Refresh Fixture mail snapshot" })
@@ -117,6 +161,28 @@ test("different MCP contexts populate both panes without AI, including unknown d
     await expect(
       left.getByText("Contact Alice", { exact: true }).first(),
     ).toBeVisible();
+    await expect(left.getByLabel("Fixture mail context source")).toHaveValue(
+      "tool:contacts_overview",
+    );
+    await left
+      .getByRole("button", { name: "Refresh Fixture mail snapshot" })
+      .click();
+    await expect(left.getByLabel("Fixture mail context source")).toHaveValue(
+      "tool:contacts_overview",
+    );
+    await left.getByLabel("Fixture mail context source").selectOption("");
+    await expect(
+      left.getByText("Quote request", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(left.getByLabel("Fixture mail context source")).toHaveValue(
+      "",
+    );
+    await left
+      .getByRole("button", { name: "Refresh Fixture mail snapshot" })
+      .click();
+    await expect(left.getByLabel("Fixture mail context source")).toHaveValue(
+      "",
+    );
     for (const [id, text] of [
       ["crm", "New lead"],
       ["calendar", "Customer meeting"],
@@ -152,6 +218,27 @@ test("different MCP contexts populate both panes without AI, including unknown d
     await dialog.getByRole("button", { name: "Save pane source" }).click();
     await expect(
       left.getByText("New lead", { exact: true }).first(),
+    ).toBeVisible();
+    await page
+      .getByLabel("left pane app", { exact: true })
+      .selectOption("disabled");
+    await expect(left.getByText(/Open Your Connections/)).toBeVisible();
+    await expect(
+      left.getByText("Overview (opaque_operation)", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      left.getByText("Delete mail (delete_email)", { exact: true }),
+    ).toHaveCount(0);
+    expect(calls.disabled ?? 0).toBe(0);
+    await left
+      .getByRole("link", { name: "Enable verified read-only tools" })
+      .click();
+    await expect(page).toHaveURL(/connections\/disabled\?section=Tools$/);
+    await expect(
+      page.getByRole("tab", { name: "Tools", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.getByRole("heading", { name: "Discovered tools", exact: true }),
     ).toBeVisible();
     await page.setViewportSize({ width: 900, height: 900 });
     expect(calls.dangerous ?? 0).toBe(0);

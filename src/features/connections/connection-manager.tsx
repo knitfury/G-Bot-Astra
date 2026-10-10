@@ -3,6 +3,7 @@ import { discoveryDetails } from "@/lib/mcp-discovery";
 import { contextConnections } from "@/lib/connections";
 import { CatalogBrowser } from "./catalog-browser";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AsyncCheckbox } from "@/components/ui/async-checkbox";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -437,8 +438,12 @@ export function ConnectionManager({
 export function ConnectionDetail({ id }: { id: string }) {
   const { data } = useSnapshot(),
     action = useAction();
-  const [tab, setTab] = useState("Overview"),
-    [edit, setEdit] = useState(false),
+  const section = useSearchParams().get("section");
+  const [selectedTab, setTab] = useState<string>();
+  const tab =
+    selectedTab ??
+    (section === "Tools" || section === "Permissions" ? section : "Overview");
+  const [edit, setEdit] = useState(false),
     [remove, setRemove] = useState(false),
     [consent, setConsent] = useState(false);
   if (!data) return <Loading />;

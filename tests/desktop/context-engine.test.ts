@@ -328,3 +328,150 @@ test("stopping context discovery cancels pending resource listing without displa
   await s.drain();
   assert.deepEqual((await pending).items, []);
 });
+
+test("API envelopes expose records and honest empty lists, never status codes as records", () => {
+  const wrap = (payload: unknown) =>
+    JSON.stringify({
+      content: [{ type: "text", text: JSON.stringify(payload) }],
+    });
+  const status = { code: 200, description: "success" };
+  for (const payload of [
+    { status: "success", data: { status } },
+    { status },
+    { structuredContent: { status: "success", data: { status } } },
+  ]) {
+    const result = normalizeContext(wrap(payload));
+    assert.deepEqual(result.items, []);
+    assert.equal(result.metadataOnly, true);
+  }
+  const record = {
+    subject: "Customer question",
+    sender: "Maya",
+    status: "open",
+    code: "CASE-1",
+  };
+  for (const data of [
+    { messages: [record] },
+    { status, messages: [record] },
+    record,
+    JSON.stringify({ messages: [record] }),
+  ]) {
+    const result = normalizeContext(wrap({ status: "success", data }));
+    assert.equal(result.items[0].title, "Customer question");
+    assert.equal(result.items[0].status, "open");
+    assert.ok(
+      !result.presentation.fields.some((f) => f.key.includes("status.code")),
+    );
+  }
+  const mixed = normalizeContext(
+    JSON.stringify({
+      content: [
+        { type: "text", text: JSON.stringify({ status }) },
+        { type: "text", text: JSON.stringify(record) },
+      ],
+    }),
+  );
+  assert.equal(mixed.items.length, 1);
+  assert.equal(mixed.items[0].title, "Customer question");
+  assert.ok(!mixed.metadataOnly);
+  const empty = normalizeContext(
+    wrap({ status: "success", data: { messages: [] } }),
+  );
+  assert.deepEqual(empty.items, []);
+  assert.ok(!empty.metadataOnly);
+  assert.equal(
+    normalizeContext('{"status":"open","code":"T1","name":"Task"}').items[0]
+      .title,
+    "Task",
+  );
+  assert.equal(
+    normalizeContext('{"visitors":10,"errors":0}').presentation.type,
+    "metrics",
+  );
+  assert.equal(
+    normalizeContext('{"code":7,"description":"Sensor reading"}').items[0]
+      .preview,
+    "Sensor reading",
+  );
+  for (const payload of [
+    { status: { code: 401, description: "PRIVATE" } },
+    { status: "error", message: "PRIVATE" },
+  ])
+    assert.throws(
+      () => normalizeContext(wrap(payload)),
+      (error: Error) => !error.message.includes("PRIVATE"),
+    );
+});
+
+test("automatic mode skips metadata-only sources; explicit selection never reads an alternative", async () => {
+  const c = contextConnection();
+  c.tools.push({
+    ...c.tools[0],
+    id: "c:records",
+    name: "records",
+    label: "Records",
+  });
+  const calls: string[] = [];
+  const s = new Snapshots(
+    () => c,
+    () => entitlementFor("business"),
+    {
+      connect: async () => [],
+      disconnect: async () => {},
+      call: async (_c, t) => {
+        calls.push(t.name);
+        return t.name === "records"
+          ? JSON.stringify(contexts.mail)
+          : '{"status":"success","data":{"status":{"code":200,"description":"success"}}}';
+      },
+    },
+    () => {},
+  );
+  const automatic = await s.get(c.id);
+  assert.equal(automatic.state, "ready");
+  assert.equal(automatic.items[0].title, "Quote request");
+  assert.deepEqual(calls, ["opaque_operation", "records"]);
+  const explicit = await s.get(c.id, true, "tool:opaque_operation");
+  assert.equal(explicit.state, "configuration");
+  assert.match(explicit.message, /only API status/);
+  assert.deepEqual(explicit.items, []);
+  assert.deepEqual(calls, ["opaque_operation", "records", "opaque_operation"]);
+  c.tools[0].enabled = false;
+  await s.get(c.id, true, "tool:opaque_operation");
+  assert.equal(calls.length, 3);
+});
+
+test("enable guidance only identifies disabled verified reads, never mutations or ambiguous tools", async () => {
+  const c = contextConnection();
+  const safe = { ...c.tools[0], enabled: false };
+  c.tools = [
+    safe,
+    { ...safe, name: "delete_email", id: "delete" },
+    { ...safe, name: "list_emails", id: "ambiguous", annotations: {} },
+  ];
+  let calls = 0;
+  const s = new Snapshots(
+    () => c,
+    () => entitlementFor("free"),
+    {
+      connect: async () => [],
+      disconnect: async () => {},
+      call: async () => {
+        calls++;
+        return "[]";
+      },
+    },
+    () => {},
+  );
+  const snapshot = await s.get(c.id);
+  assert.equal(snapshot.state, "permission");
+  assert.deepEqual(
+    snapshot.sources
+      ?.filter((source) => source.safety === "permission")
+      .map((source) => source.name),
+    [safe.name],
+  );
+  c.tools = c.tools.slice(1);
+  assert.equal((await s.get(c.id, true)).state, "unknown");
+  assert.equal(calls, 0);
+});

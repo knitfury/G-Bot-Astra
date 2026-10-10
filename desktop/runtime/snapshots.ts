@@ -181,7 +181,20 @@ export class Snapshots {
       source: "tool",
       description: t.description,
       outputSchema: t.outputSchema,
-      safety: !t.enabled ? "permission" : undefined,
+      safety:
+        !t.enabled &&
+        !!t.schemaHash &&
+        !mutationVeto(t) &&
+        (declaredRead(t) ||
+          mappings.some(
+            (m) =>
+              m.endpoint === c.url &&
+              m.tool === t.name &&
+              m.schemaHash === t.schemaHash &&
+              m.evidence.length > 20,
+          ))
+          ? "permission"
+          : undefined,
       name: t.name,
       label:
         mappings.find(
@@ -434,6 +447,7 @@ export class Snapshots {
       if (!refresh && prior?.key === cacheKey && Date.now() - prior.at < 60_000)
         return prior.value;
       let failures = 0;
+      let metadataResponses = 0;
       for (const source of ready.slice(0, chosen ? 1 : 3)) {
         try {
           const current = this.connection(id);
@@ -506,6 +520,10 @@ export class Snapshots {
             config?.fields ?? source.defaults?.fields,
             source.outputSchema,
           );
+          if (normalized.metadataOnly) {
+            metadataResponses++;
+            continue;
+          }
           const out: BusinessSnapshot = {
             ...view,
             ...normalized,
@@ -533,6 +551,14 @@ export class Snapshots {
           this.event(id, "Business context unavailable", "failed");
         }
       }
+      if (metadataResponses && !failures)
+        return {
+          ...view,
+          state: "configuration",
+          selectedSource: chosen,
+          message:
+            "The source returned only API status information, not business records. Choose a record source in Context or Configure pane and supply its required parameters.",
+        };
       return {
         ...view,
         state: "error",

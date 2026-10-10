@@ -126,6 +126,7 @@ export function normalizeContext(
   items: SnapshotItem[];
   presentation: ContextPresentation;
   truncated: boolean;
+  metadataOnly?: boolean;
 } {
   if (raw.length > 200_000)
     throw Error("Context exceeds the supported size limit.");
@@ -135,16 +136,70 @@ export function normalizeContext(
   } catch {
     data = raw;
   }
+  let metadataOnly = false;
   function unwrap(v: unknown, depth = 0): unknown {
     if (!isObject(v) || depth > 6) return v;
     if (v.isError === true) throw Error("Source reported an error.");
-    if (v.structuredContent !== undefined) return v.structuredContent;
+    if (v.structuredContent !== undefined)
+      return unwrap(v.structuredContent, depth + 1);
     const blocks = Array.isArray(v.contents)
       ? v.contents
       : Array.isArray(v.content)
         ? v.content
         : null;
-    if (!blocks) return v;
+    if (!blocks) {
+      // Recognize response envelopes by shape, never by provider names.
+      // Records with business fields alongside status/code remain records.
+      const envelopeKeys = new Set([
+        "status",
+        "code",
+        "statusCode",
+        "status_code",
+        "success",
+        "message",
+        "description",
+        "data",
+        "result",
+        "response",
+      ]);
+      const keys = Object.keys(v);
+      const status = isObject(v.status) ? v.status : v;
+      const code = status.code ?? status.statusCode ?? status.status_code;
+      const httpCode =
+        code !== undefined &&
+        Number.isInteger(Number(code)) &&
+        Number(code) >= 100 &&
+        Number(code) <= 599;
+      const responseStatus =
+        typeof v.status === "string" &&
+        /^(success|ok|error|failure|failed)$/i.test(v.status);
+      const envelope =
+        keys.length > 0 &&
+        keys.every((k) => envelopeKeys.has(k)) &&
+        (responseStatus || typeof v.success === "boolean" || httpCode);
+      if (!envelope) return v;
+      if (
+        v.success === false ||
+        /^(error|failure|failed)$/i.test(String(v.status)) ||
+        (httpCode && Number(code) >= 400)
+      )
+        throw Error("Source reported an error.");
+      for (const key of ["data", "result", "response"]) {
+        if (v[key] !== undefined && v[key] !== null) {
+          let payload = v[key];
+          if (typeof payload === "string") {
+            try {
+              payload = JSON.parse(payload);
+            } catch {
+              /* Plain text is a document. */
+            }
+          }
+          return unwrap(payload, depth + 1);
+        }
+      }
+      metadataOnly = true;
+      return undefined;
+    }
     const values = blocks.slice(0, 50).flatMap((b): unknown[] => {
       if (!isObject(b)) return [];
       if (b.type === "resource" && isObject(b.resource))
@@ -158,11 +213,14 @@ export function normalizeContext(
           },
         ];
       if (typeof b.text === "string") {
+        let parsed: unknown;
         try {
-          return [JSON.parse(b.text)];
+          parsed = JSON.parse(b.text);
         } catch {
           return [b.text];
         }
+        const value = unwrap(parsed, depth + 1);
+        return value === undefined ? [] : [value];
       }
       if (typeof b.blob === "string")
         return [
@@ -309,5 +367,6 @@ export function normalizeContext(
     items,
     presentation: { type, fields },
     truncated: list.length > 50,
+    metadataOnly: metadataOnly && items.length === 0,
   };
 }

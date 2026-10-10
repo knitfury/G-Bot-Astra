@@ -78,6 +78,13 @@ export function BusinessSnapshotPane({
       JSON.stringify(i).toLowerCase().includes(search.toLowerCase()),
     ),
     item = items.find((i) => i.id === selected) ?? items[0];
+  const disabledReads =
+    snapshot.sources?.filter(
+      (s) =>
+        s.source === "tool" &&
+        s.safety === "permission" &&
+        (!context || context === `tool:${s.name}`),
+    ) ?? [];
   return (
     <>
       <div className="snapshot-header">
@@ -107,7 +114,7 @@ export function BusinessSnapshotPane({
             Context
             <select
               aria-label={`${connection.name} context source`}
-              value={context ?? snapshot.selectedSource ?? ""}
+              value={context ?? ""}
               onChange={(e) => {
                 setContext(e.target.value || undefined);
                 setSelected("");
@@ -139,6 +146,28 @@ export function BusinessSnapshotPane({
           <p role={snapshot.state === "error" ? "alert" : "status"}>
             {snapshot.message}
           </p>
+        </div>
+      )}
+      {!snapshot.items.length && !!disabledReads.length && (
+        <div className="snapshot-state">
+          <p>
+            Open Your Connections → {connection.name} → Tools. Review and enable
+            the verified read-only tools listed below, then return to this pane
+            and refresh. Supply any required values in Configure pane.
+          </p>
+          <ul>
+            {disabledReads.map((s) => (
+              <li key={s.name}>
+                {s.label} ({s.name})
+              </li>
+            ))}
+          </ul>
+          <Link
+            className="text-link tiny"
+            href={`/connections/${connection.id}?section=Tools`}
+          >
+            Enable verified read-only tools
+          </Link>
         </div>
       )}
       {!!snapshot.items.length && (
@@ -229,7 +258,10 @@ export function BusinessSnapshotPane({
           key={connection.id + JSON.stringify(connection.snapshotConfig)}
           connection={connection}
         />
-        <Link className="text-link tiny" href={`/connections/${connection.id}`}>
+        <Link
+          className="text-link tiny"
+          href={`/connections/${connection.id}?section=Tools`}
+        >
           MCP Details / Tools & Permissions
         </Link>
       </div>
