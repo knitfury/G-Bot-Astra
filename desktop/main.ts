@@ -550,6 +550,13 @@ async function boot() {
           value = await diagnostics.record("renderer_failure", "RENDERER");
         else if (request.operation === "desktop.paneSources")
           value = await runtime.snapshots.sources(a[0] as string);
+        else if (request.operation === "desktop.paneResolve")
+          value = await runtime.snapshots.resolvePane(
+            a[0] as string,
+            a[1] as string,
+            a[2] as Record<string, unknown>,
+            a[3] as Record<string, string | number | boolean>,
+          );
         else if (request.operation === "desktop.paneChoices")
           value = await runtime.snapshots.choices(
             a[0] as string,

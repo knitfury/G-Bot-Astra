@@ -27,6 +27,12 @@ export type Calls = GroupCalls & {
   "desktop.paneSources": (
     id: string,
   ) => Promise<import("../../types/snapshot").SnapshotSource[]>;
+  "desktop.paneResolve": (
+    id: string,
+    target: string,
+    args: Record<string, unknown>,
+    choices: Record<string, string | number | boolean>,
+  ) => Promise<import("../../types/snapshot").PaneResolution>;
   "desktop.paneChoices": (
     id: string,
     target: string,

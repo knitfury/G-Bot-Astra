@@ -155,3 +155,10 @@ export interface ContextChoice {
   label: string;
   choices: { value: string | number | boolean; label: string }[];
 }
+
+export interface PaneResolution {
+  arguments: Record<string, unknown>;
+  choices: ContextChoice[];
+  issues: { field: string; message: string }[];
+  diagnostics: Record<string, unknown>;
+}

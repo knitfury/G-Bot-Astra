@@ -8,8 +8,12 @@ import {
   setParameter,
   validateParameterInputs,
 } from "@/lib/context-parameters";
-import type { SnapshotSource, ParameterChoices } from "@/types/snapshot";
-import { useState } from "react";
+import type {
+  PaneResolution,
+  SnapshotSource,
+  ParameterChoices,
+} from "@/types/snapshot";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { desktopCall } from "@/services/desktop/client";
 import { useAction } from "@/hooks/use-services";
@@ -55,6 +59,142 @@ export function PaneConfiguration({
   const source = sources.data?.find(
     (s) => `${s.source}:${s.name}` === selected,
   );
+  const [resolution, setResolution] = useState<PaneResolution>(),
+    [resolving, setResolving] = useState(false),
+    [preview, setPreview] = useState(false),
+    [copied, setCopied] = useState(false),
+    [accessRevision, setAccessRevision] = useState(0);
+  const epoch = useRef(0);
+  const access = JSON.stringify([
+    connection.url,
+    connection.enabled,
+    connection.status,
+    connection.tools,
+  ]);
+  const priorAccess = useRef(access);
+  const discovered = useRef<Record<string, unknown>>({});
+  const selections = useRef<Record<string, string | number | boolean>>({});
+  const updateArgs = (value: string) => {
+    epoch.current++;
+    setResolving(false);
+    try {
+      let next = JSON.parse(value);
+      const previous = JSON.parse(args);
+      const changed = parameterFields(source?.inputSchema).some(
+        (field) =>
+          JSON.stringify(parameterValue(next, field.path)) !==
+          JSON.stringify(parameterValue(previous, field.path)),
+      );
+      for (const path of Object.keys(discovered.current)) {
+        const userChanged =
+          JSON.stringify(parameterValue(next, path)) !==
+          JSON.stringify(discovered.current[path]);
+        if (changed && !userChanged) next = setParameter(next, path, undefined);
+        if (changed || userChanged) delete discovered.current[path];
+      }
+      value = JSON.stringify(next, null, 2);
+    } catch {
+      discovered.current = {};
+    }
+    setArgs(value);
+    setResolution(undefined);
+    setPreview(false);
+  };
+  async function resolveAvailable(resetDiscovered = false) {
+    if (!source?.eligible) return;
+    let input: unknown;
+    try {
+      input = JSON.parse(args);
+    } catch {
+      return;
+    }
+    if (!isObject(input)) return;
+    if (resetDiscovered) {
+      for (const path of Object.keys(discovered.current))
+        input = setParameter(input as Record<string, unknown>, path, undefined);
+      discovered.current = {};
+    }
+    const request = ++epoch.current;
+    setResolving(true);
+    setError("");
+    setPreview(false);
+    setCopied(false);
+    try {
+      const result = await desktopCall(
+        "desktop.paneResolve",
+        connection.id,
+        selected,
+        input as Record<string, unknown>,
+        selections.current,
+      );
+      if (request !== epoch.current) return;
+      setResolution(result);
+      for (const field of parameterFields(source.inputSchema)) {
+        const value = parameterValue(result.arguments, field.path);
+        if (
+          JSON.stringify(value) !==
+          JSON.stringify(parameterValue(input, field.path))
+        )
+          discovered.current[field.path] = value;
+      }
+      setArgs(JSON.stringify(result.arguments, null, 2));
+    } catch (error) {
+      if (request === epoch.current)
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Discovery could not complete. Review this app’s Tools & Permissions.",
+        );
+    } finally {
+      if (request === epoch.current) setResolving(false);
+    }
+  }
+  useEffect(() => {
+    if (!open) return;
+    if (priorAccess.current !== access) {
+      priorAccess.current = access;
+      selections.current = {};
+      let input: Record<string, unknown> = {};
+      try {
+        input = JSON.parse(args);
+      } catch {}
+      for (const path of Object.keys(discovered.current))
+        input = setParameter(input, path, undefined);
+      discovered.current = {};
+      setArgs(JSON.stringify(input, null, 2));
+      setResolution(undefined);
+      setPreview(false);
+      setAccessRevision((value) => value + 1);
+      // Resolve on the next render with invalidated discovered values removed.
+      return;
+    }
+    if (!selected && sources.data) {
+      const suggested =
+        sources.data.find((s) => s.eligible && s.purpose === "business") ??
+        sources.data.find((s) => s.eligible);
+      if (suggested) {
+        setSelected(`${suggested.source}:${suggested.name}`);
+        setArgs(JSON.stringify(suggested.arguments ?? {}, null, 2));
+      }
+      return;
+    }
+    if (source?.eligible) void resolveAvailable();
+    return () => {
+      epoch.current++;
+      setResolving(false);
+      setResolution(undefined);
+      setPreview(false);
+    };
+    // User edits do not trigger reads. Each source/access change starts a new bounded session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    open,
+    selected,
+    source?.binding,
+    source?.eligible,
+    access,
+    accessRevision,
+  ]);
   let parsed: unknown;
   try {
     parsed = JSON.parse(args);
@@ -120,6 +260,10 @@ export function PaneConfiguration({
               aria-label="Read source"
               value={selected}
               onChange={(e) => {
+                epoch.current++;
+                discovered.current = {};
+                setResolution(undefined);
+                setPreview(false);
                 setSelected(e.target.value);
                 const next = sources.data?.find(
                   (s) => `${s.source}:${s.name}` === e.target.value,
@@ -227,11 +371,104 @@ export function PaneConfiguration({
                   </pre>
                 </details>
               )}
+              <Button
+                size="sm"
+                disabled={resolving || !source.eligible}
+                onClick={() => void resolveAvailable()}
+              >
+                Resolve available values
+              </Button>
+              {resolving && (
+                <p role="status">Checking authorized discovery tools…</p>
+              )}
+              {resolution?.choices
+                .filter((question) => question.choices.length > 1)
+                .map((question) => (
+                  <label className="field" key={question.key}>
+                    {question.label}
+                    <select
+                      aria-label={`${question.label} discovery choice`}
+                      value={
+                        question.selected === undefined
+                          ? ""
+                          : question.choices.findIndex(
+                              (choice) => choice.value === question.selected,
+                            )
+                      }
+                      onChange={(event) => {
+                        const choice =
+                          question.choices[Number(event.target.value)];
+                        if (!choice) return;
+                        selections.current[question.key] = choice.value;
+                        void resolveAvailable(true);
+                      }}
+                    >
+                      <option value="" disabled>
+                        Choose {question.label.toLowerCase()}…
+                      </option>
+                      {question.choices.map((choice, index) => (
+                        <option key={index} value={index}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              {resolution?.issues.map((issue, index) => (
+                <p role="status" key={index}>
+                  {issue.message}
+                </p>
+              ))}
+              {resolution && (
+                <div className="stack">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setPreview(true);
+                      setCopied(false);
+                    }}
+                  >
+                    Copy sanitized discovery diagnostics
+                  </Button>
+                  {preview && (
+                    <section aria-label="Sanitized discovery diagnostics preview">
+                      <p>
+                        Review this preview before copying. Response values,
+                        identifiers and free-text schema values are redacted. No
+                        diagnostics are uploaded.
+                      </p>
+                      <pre className="code">
+                        {JSON.stringify(resolution.diagnostics, null, 2)}
+                      </pre>
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(
+                              JSON.stringify(resolution.diagnostics, null, 2),
+                            );
+                            setCopied(true);
+                          } catch {
+                            setError(
+                              "Clipboard access failed. Select and copy the preview text instead.",
+                            );
+                          }
+                        }}
+                      >
+                        Copy preview
+                      </Button>
+                      {copied && (
+                        <p role="status">Sanitized diagnostics copied.</p>
+                      )}
+                    </section>
+                  )}
+                </div>
+              )}
               <ParameterFields
                 key={selected + source.binding}
                 schema={source.inputSchema}
                 value={args}
-                change={setArgs}
+                change={updateArgs}
                 connectionId={connection.id}
                 source={source}
                 sources={sources.data ?? []}
@@ -245,7 +482,7 @@ export function PaneConfiguration({
                     <textarea
                       aria-label="Parameters (JSON)"
                       value={args}
-                      onChange={(e) => setArgs(e.target.value)}
+                      onChange={(e) => updateArgs(e.target.value)}
                       rows={5}
                       spellCheck={false}
                     />
@@ -323,6 +560,7 @@ export function PaneConfiguration({
                 !source?.eligible ||
                 !consent ||
                 !validation.valid ||
+                resolving ||
                 action.isPending
               }
               onClick={() => void save()}

@@ -3,6 +3,8 @@ import {
   parameterFields,
   validateParameters,
 } from "../../src/lib/context-parameters";
+import { createHash } from "node:crypto";
+import { sanitizeDiscovery } from "./discovery-diagnostics";
 import { resolveContextArguments } from "./context-workflow";
 import { argumentPlan, rankSource } from "./context-discovery";
 import { inferKind, normalizeContext } from "../../src/lib/context-inference";
@@ -134,10 +136,11 @@ export class Snapshots {
     string,
     { key: string; value: BusinessSnapshot; at: number }
   >();
+  private panePending = new Set<Promise<void>>();
   private generation = 0;
   private controllers = new Set<AbortController>();
   get active() {
-    return this.pending.size > 0;
+    return this.pending.size > 0 || this.panePending.size > 0;
   }
   private pending = new Map<string, Promise<BusinessSnapshot>>();
   constructor(
@@ -160,7 +163,7 @@ export class Snapshots {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
-        Promise.allSettled([...this.pending.values()]),
+        Promise.allSettled([...this.pending.values(), ...this.panePending]),
         new Promise((_, reject) => {
           timer = setTimeout(
             () => reject(new Error("Snapshot requests have not stopped.")),
@@ -362,6 +365,320 @@ export class Snapshots {
           "No matching values returned. Enter a value from your business app.",
     };
   }
+  private discoveryReader(
+    id: string,
+    sources: SnapshotSource[],
+    signal: AbortSignal,
+    valid: () => boolean,
+    attempt: (
+      value: NonNullable<BusinessSnapshot["diagnostics"]>["attempts"][number],
+    ) => void,
+    response?: (source: SnapshotSource, shape: unknown) => void,
+  ) {
+    let discoveryCalls = 0;
+    const sourceKey = (s: SnapshotSource) => `${s.source}:${s.name}`;
+    return async (source: SnapshotSource): Promise<unknown> => {
+      if (++discoveryCalls > 6 || signal.aborted || !valid())
+        throw new DomainError(
+          "TOOL_UNAVAILABLE",
+          "Automatic discovery reached its safe limit.",
+        );
+      try {
+        const current = this.connection(id);
+        const fresh = (await this.sources(id, signal)).find(
+          (s) => sourceKey(s) === sourceKey(source),
+        );
+        if (
+          !current ||
+          !fresh?.eligible ||
+          fresh.binding !== source.binding ||
+          !connectionAvailable(this.entitlement(), current) ||
+          !valid()
+        )
+          throw new DomainError(
+            "TOOL_UNAVAILABLE",
+            "Discovery permissions changed.",
+          );
+        const config: SnapshotConfig = {
+          endpoint: current.url,
+          source: source.source,
+          name: source.name,
+          binding: source.binding,
+          kind: source.kind ?? "generic",
+          arguments: source.arguments ?? {},
+        };
+        let raw: string;
+        if (source.source === "tool") {
+          const tool = current.tools.find(
+            (t) =>
+              t.name === source.name &&
+              t.schemaHash === source.binding &&
+              t.connectionId === id,
+          );
+          const policy =
+            tool?.enabled &&
+            snapshotRead(
+              { ...current, snapshotConfig: config },
+              tool,
+              (await this.mcp.paneMappings?.()) ?? [],
+            );
+          if (!tool || !policy)
+            throw new DomainError(
+              "TOOL_UNAVAILABLE",
+              "Discovery is not authorized.",
+            );
+          raw = await this.mcp.call(current, tool, policy.args, signal);
+          if (raw.length > 200_000)
+            throw new DomainError(
+              "MCP_PROTOCOL",
+              "Discovery response exceeds the supported limit.",
+            );
+          const payload = JSON.parse(raw);
+          response?.(source, sanitizeDiscovery(payload));
+          if (payload.isError === true)
+            throw new DomainError(
+              "TOOL_FAILED",
+              "Discovery returned an error.",
+            );
+          if (
+            tool.outputSchema &&
+            !new Ajv({ strict: false, validateFormats: false }).validate(
+              tool.outputSchema,
+              payload.structuredContent,
+            )
+          )
+            throw new DomainError(
+              "MCP_PROTOCOL",
+              "Discovery response did not match its schema.",
+            );
+        } else {
+          if (
+            !this.mcp.readResource ||
+            !validateParameters(source.inputSchema, config.arguments).valid
+          )
+            throw new DomainError(
+              "TOOL_UNAVAILABLE",
+              "Discovery resource is unavailable.",
+            );
+          raw = await this.mcp.readResource(
+            current,
+            source,
+            config.arguments,
+            signal,
+          );
+        }
+        const after = (await this.sources(id, signal)).find(
+          (s) => sourceKey(s) === sourceKey(source),
+        );
+        if (
+          raw.length > 200_000 ||
+          signal.aborted ||
+          !valid() ||
+          !after?.eligible ||
+          after.binding !== source.binding
+        )
+          throw new DomainError(
+            "TOOL_UNAVAILABLE",
+            "Discovery changed while reading.",
+          );
+        const payload = JSON.parse(raw);
+        response?.(source, sanitizeDiscovery(payload));
+        if (payload.isError === true)
+          throw new DomainError("TOOL_FAILED", "Discovery returned an error.");
+        attempt({
+          phase: "discovery",
+          source: sources.findIndex((s) => sourceKey(s) === sourceKey(source)),
+          outcome: "records",
+          records: 0,
+        });
+        this.event(id, "Read automatic context choices", "completed");
+        return payload.structuredContent;
+      } catch (error) {
+        attempt({
+          phase: "discovery",
+          source: sources.findIndex((s) => sourceKey(s) === sourceKey(source)),
+          outcome:
+            error instanceof DomainError && error.code === "INVALID_ARGUMENTS"
+              ? "invalid-arguments"
+              : "tool-error",
+          records: 0,
+          code: error instanceof DomainError ? error.code : "TOOL_FAILED",
+        });
+        this.event(id, "Automatic discovery unavailable", "failed");
+        throw error;
+      }
+    };
+  }
+  async resolvePane(
+    id: string,
+    targetKey: string,
+    argumentsInput: Record<string, unknown>,
+    selections: Record<string, string | number | boolean> = {},
+  ) {
+    if (
+      JSON.stringify(argumentsInput).length > 16000 ||
+      JSON.stringify(selections).length > 16000
+    )
+      throw new DomainError(
+        "INVALID_ARGUMENTS",
+        "Source settings are too large.",
+      );
+    const c = this.connection(id);
+    if (!c || !c.enabled || !["connected", "degraded"].includes(c.status))
+      throw new DomainError(
+        "TOOL_UNAVAILABLE",
+        "Reconnect this app before discovery.",
+      );
+    const fingerprint = JSON.stringify([
+      c,
+      this.entitlement(),
+      this.generation,
+    ]);
+    const valid = () =>
+      fingerprint ===
+      JSON.stringify([
+        this.connection(id),
+        this.entitlement(),
+        this.generation,
+      ]);
+    const controller = new AbortController();
+    this.controllers.add(controller);
+    let completed!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      completed = resolve;
+    });
+    this.panePending.add(pending);
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(20000),
+    ]);
+    try {
+      const sources = await this.sources(id, signal);
+      const target = sources.find((s) => `${s.source}:${s.name}` === targetKey);
+      if (!target?.eligible)
+        throw new DomainError(
+          "TOOL_UNAVAILABLE",
+          "Enable a verified read source in Tools & Permissions.",
+        );
+      const choices: import("../../src/types/snapshot").ContextChoice[] = [];
+      const decisions: {
+        field: string;
+        reason: string;
+        source?: string;
+        collection?: string;
+        recordPath?: string;
+      }[] = [];
+      const attempts: NonNullable<BusinessSnapshot["diagnostics"]>["attempts"] =
+        [];
+      const responses: { source: string; structure: unknown }[] = [];
+      const read = this.discoveryReader(
+        id,
+        sources,
+        signal,
+        valid,
+        (attempt) => attempts.push(attempt),
+        (source, structure) => {
+          const existing = responses.find((r) => r.source === source.name);
+          if (existing) existing.structure = structure;
+          else responses.push({ source: source.name, structure });
+        },
+      );
+      const resolved = await resolveContextArguments(
+        { ...target, arguments: structuredClone(argumentsInput) },
+        sources,
+        read,
+        new Map(),
+        new Set(),
+        (question) => {
+          const selected =
+            selections[question.key] ?? c.contextChoices?.[question.key];
+          const actual = question.choices.find(
+            (choice) => choice.value === selected,
+          );
+          const existing = choices.findIndex(
+            (choice) => choice.key === question.key,
+          );
+          const entry = { ...question, selected: actual?.value };
+          if (existing >= 0) choices[existing] = entry;
+          else choices.push(entry);
+          return actual?.value;
+        },
+        decisions,
+      );
+      if (!valid() || signal.aborted)
+        throw new DomainError(
+          "TOOL_UNAVAILABLE",
+          "Access changed or discovery timed out. Refresh before using discovered values.",
+        );
+      const issues = validateParameters(
+        target.inputSchema,
+        resolved.arguments,
+      ).issues.map((issue) => ({
+        field: issue.path,
+        message: `${issue.message} ${decisions.find((d) => d.field === issue.path)?.reason ?? "This value cannot be established from the available declared discovery contracts."}`,
+      }));
+      const relevant = [
+        target,
+        ...sources.filter((s) => s !== target && s.purpose === "discovery"),
+      ].slice(0, 21);
+      const operationName = (name: string) =>
+        /^[A-Za-z_][A-Za-z0-9_.:-]{0,150}$/.test(name) && !/\d{6,}/.test(name)
+          ? name
+          : "[redacted-source]";
+      const diagnostics = {
+        format: "gbot-discovery-diagnostics-v1",
+        selectedSource: operationName(target.name),
+        sources: relevant.map((source) => {
+          const tool = c.tools.find(
+            (t) => source.source === "tool" && t.name === source.name,
+          );
+          return {
+            name: operationName(source.name),
+            position: sources.indexOf(source),
+            binding: createHash("sha256").update(source.binding).digest("hex"),
+            inputSchema: sanitizeDiscovery(source.inputSchema, true),
+            outputSchema: source.outputSchema
+              ? sanitizeDiscovery(source.outputSchema, true)
+              : null,
+            annotations: sanitizeDiscovery(tool?.annotations, true),
+            enabled: tool?.enabled ?? c.enabled,
+            risk: tool?.risk,
+            requiresApproval: tool?.requiresApproval,
+            eligible: source.eligible,
+            authority: source.authority,
+            safety: source.safety,
+            readiness: source.readiness,
+            purpose: source.purpose,
+          };
+        }),
+        decisions: decisions.map((decision) => ({
+          ...decision,
+          source: decision.source ? operationName(decision.source) : undefined,
+        })),
+        attempts,
+        responses: responses.map((response) => ({
+          ...response,
+          source: operationName(response.source),
+        })),
+        limits: {
+          discoveryCalls: 6,
+          dependencyLevels: 3,
+          timeoutSeconds: 20,
+          relevantSources: 21,
+        },
+      };
+      return {
+        arguments: resolved.arguments ?? {},
+        choices,
+        issues,
+        diagnostics,
+      };
+    } finally {
+      this.controllers.delete(controller);
+      this.panePending.delete(pending);
+      completed();
+    }
+  }
   async choose(
     id: string,
     questionKey: string,
@@ -529,141 +846,17 @@ export class Snapshots {
       const safe = sources.filter(
         (s) => s.eligible && (!chosen || sourceKey(s) === chosen),
       );
-      let discoveryCalls = 0;
       const automaticArguments = new Map<SnapshotSource, SnapshotConfig>();
       const unavailableViews: string[] = [];
       if (!configured) {
-        const memo = new Map<string, Promise<SnapshotItem[]>>();
-        const discoveryRead = async (source: SnapshotSource) => {
-          if (++discoveryCalls > 6 || signal.aborted || key !== keyFor())
-            throw new DomainError(
-              "TOOL_UNAVAILABLE",
-              "Automatic discovery reached its safe limit.",
-            );
-          try {
-            const current = this.connection(id);
-            const fresh = (await this.sources(id, signal)).find(
-              (s) => sourceKey(s) === sourceKey(source),
-            );
-            if (
-              !current ||
-              !fresh?.eligible ||
-              fresh.binding !== source.binding ||
-              !connectionAvailable(this.entitlement(), current) ||
-              key !== keyFor()
-            )
-              throw new DomainError(
-                "TOOL_UNAVAILABLE",
-                "Discovery permissions changed.",
-              );
-            const config: SnapshotConfig = {
-              endpoint: current.url,
-              source: source.source,
-              name: source.name,
-              binding: source.binding,
-              kind: source.kind ?? "generic",
-              arguments: source.arguments ?? {},
-            };
-            let raw: string;
-            if (source.source === "tool") {
-              const tool = current.tools.find(
-                (t) =>
-                  t.name === source.name &&
-                  t.schemaHash === source.binding &&
-                  t.connectionId === id,
-              );
-              const policy =
-                tool?.enabled &&
-                snapshotRead(
-                  { ...current, snapshotConfig: config },
-                  tool,
-                  (await this.mcp.paneMappings?.()) ?? [],
-                );
-              if (!tool || !policy)
-                throw new DomainError(
-                  "TOOL_UNAVAILABLE",
-                  "Discovery is not authorized.",
-                );
-              raw = await this.mcp.call(current, tool, policy.args, signal);
-              if (
-                tool.outputSchema &&
-                !new Ajv({ strict: false, validateFormats: false }).validate(
-                  tool.outputSchema,
-                  JSON.parse(raw).structuredContent,
-                )
-              )
-                throw new DomainError(
-                  "MCP_PROTOCOL",
-                  "Discovery response did not match its schema.",
-                );
-            } else {
-              if (
-                !this.mcp.readResource ||
-                !validateParameters(source.inputSchema, config.arguments).valid
-              )
-                throw new DomainError(
-                  "TOOL_UNAVAILABLE",
-                  "Discovery resource is unavailable.",
-                );
-              raw = await this.mcp.readResource(
-                current,
-                source,
-                config.arguments,
-                signal,
-              );
-            }
-            const after = (await this.sources(id, signal)).find(
-              (s) => sourceKey(s) === sourceKey(source),
-            );
-            if (
-              raw.length > 200_000 ||
-              signal.aborted ||
-              key !== keyFor() ||
-              !after?.eligible ||
-              after.binding !== source.binding
-            )
-              throw new DomainError(
-                "TOOL_UNAVAILABLE",
-                "Discovery changed while reading.",
-              );
-            const result = normalizeContext(
-              raw,
-              source.kind ?? "generic",
-              undefined,
-              source.outputSchema,
-            );
-            diagnostics.attempts.push({
-              phase: "discovery",
-              source: sources.findIndex(
-                (s) => sourceKey(s) === sourceKey(source),
-              ),
-              outcome: result.metadataOnly
-                ? "status-only"
-                : result.items.length
-                  ? "records"
-                  : "empty",
-              records: result.items.length,
-            });
-            this.event(id, "Read automatic context choices", "completed");
-            return result.metadataOnly || result.truncated ? [] : result.items;
-          } catch (error) {
-            diagnostics.attempts.push({
-              phase: "discovery",
-              source: sources.findIndex(
-                (s) => sourceKey(s) === sourceKey(source),
-              ),
-              outcome:
-                error instanceof DomainError &&
-                error.code === "INVALID_ARGUMENTS"
-                  ? "invalid-arguments"
-                  : "tool-error",
-              records: 0,
-              code: error instanceof DomainError ? error.code : "TOOL_FAILED",
-            });
-            this.event(id, "Automatic discovery unavailable", "failed");
-            throw error;
-          }
-        };
+        const memo = new Map<string, Promise<unknown>>();
+        const discoveryRead = this.discoveryReader(
+          id,
+          sources,
+          signal,
+          () => key === keyFor(),
+          (attempt) => diagnostics.attempts.push(attempt),
+        );
         // Resolve business reads before presenting account/folder lookup records as an overview.
         for (const target of safe
           .filter((s) => s.purpose === "business" && s.needs?.length)

@@ -132,6 +132,13 @@ test("different MCP contexts populate both panes without AI, including unknown d
       let value: unknown;
       if (r.operation === "snapshot")
         value = await f.runtime.services.snapshot();
+      else if (r.operation === "desktop.paneResolve")
+        value = await f.runtime.snapshots.resolvePane(
+          r.args[0] as string,
+          r.args[1] as string,
+          r.args[2] as Record<string, unknown>,
+          r.args[3] as Record<string, string | number | boolean>,
+        );
       else if (r.operation === "desktop.readPreferences") value = null;
       else if (r.operation === "desktop.savePreferences") value = undefined;
       else if (r.operation === "desktop.paneSources")
@@ -262,14 +269,18 @@ test("different MCP contexts populate both panes without AI, including unknown d
     await expect(
       dialog.getByLabel("Parameters (JSON)", { exact: false }),
     ).not.toBeVisible();
-    await dialog.getByLabel("I trust this source", { exact: false }).check();
     await expect(
-      dialog.getByRole("button", { name: "Save pane source" }),
-    ).toBeDisabled();
+      dialog.getByRole("button", { name: "Resolve available values" }),
+    ).toBeEnabled();
     await dialog
-      .getByRole("button", { name: "Load Project choices from Projects" })
+      .getByRole("button", { name: "Copy sanitized discovery diagnostics" })
       .click();
-    await dialog.getByLabel("Project discovered choices").selectOption("0");
+    const preview = dialog.getByRole("region", {
+      name: "Sanitized discovery diagnostics preview",
+    });
+    await expect(preview).toBeVisible();
+    await expect(preview).not.toContainText("actual-project");
+    await expect(preview).toContainText("gbot-discovery-diagnostics-v1");
     await expect(dialog.getByLabel("Project", { exact: true })).toHaveValue(
       "actual-project",
     );
@@ -304,6 +315,129 @@ test("different MCP contexts populate both panes without AI, including unknown d
     ).toBeVisible();
     await page.setViewportSize({ width: 900, height: 900 });
     expect(calls.dangerous ?? 0).toBe(0);
+  } finally {
+    f.runtime.engine.stopAll();
+  }
+});
+
+test("Configure discovers dependencies, changes verified choices, preserves manual edits and previews diagnostics before copying", async ({
+  page,
+}) => {
+  const { contextWorkflowFixture } =
+    await import("../fixtures/context-workflow");
+  const workflow = contextWorkflowFixture({ accounts: 2, folders: ["Inbox"] });
+  const f = await fixtureRuntime();
+  await f.runtime.services.auth.demo();
+  await f.runtime.services.entitlements.change("business");
+  f.runtime.db.connections = [workflow.c];
+  f.runtime.mcp.call = workflow.mcp.call;
+  f.runtime.mcp.sources = async () => [];
+  await page.exposeFunction(
+    "configurationFixture",
+    async (op: unknown, args: unknown) => {
+      const r = validateOperation(op, args);
+      let value: unknown;
+      if (r.operation === "snapshot")
+        value = await f.runtime.services.snapshot();
+      else if (r.operation === "desktop.paneSources")
+        value = await f.runtime.snapshots.sources(r.args[0] as string);
+      else if (r.operation === "desktop.paneResolve")
+        value = await f.runtime.snapshots.resolvePane(
+          r.args[0] as string,
+          r.args[1] as string,
+          r.args[2] as Record<string, unknown>,
+          r.args[3] as Record<string, string | number | boolean>,
+        );
+      else if (r.operation === "desktop.readPreferences") value = null;
+      else if (r.operation === "desktop.savePreferences") value = undefined;
+      else {
+        const [g, m] = r.operation.split(".");
+        value = await (f.runtime.services as any)[g][m](...r.args);
+      }
+      return { ok: true, value };
+    },
+  );
+  await page.addInitScript(() => {
+    (window as any).gbot = {
+      call: (op: unknown, args: unknown) =>
+        (window as any).configurationFixture(op, args),
+      subscribe: () => () => {},
+    };
+    (window as any).copiedDiagnostics = [];
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: async (text: string) => {
+          (window as any).copiedDiagnostics.push(text);
+        },
+      },
+    });
+  });
+  try {
+    await page.goto("/workspace");
+    await page
+      .getByRole("complementary", { name: "left business app pane" })
+      .getByRole("button", { name: "Configure pane" })
+      .click();
+    const dialog = page.getByRole("dialog");
+    await dialog
+      .getByLabel("Read source", { exact: true })
+      .selectOption("tool:listEmails");
+    const account = dialog.getByLabel("Business account discovery choice", {
+      exact: true,
+    });
+    await expect(account).toBeVisible();
+    await account.selectOption("0");
+    await expect(
+      dialog.getByLabel("Business account", { exact: true }),
+    ).toHaveValue("actual-account-0");
+    await expect(dialog.getByLabel("Mail folder", { exact: true })).toHaveValue(
+      "actual-Inbox",
+    );
+    await account.selectOption("1");
+    await expect(
+      dialog.getByLabel("Business account", { exact: true }),
+    ).toHaveValue("actual-account-1");
+    await dialog
+      .getByLabel("Business account", { exact: true })
+      .fill("manual-account");
+    await expect(dialog.getByLabel("Mail folder", { exact: true })).toHaveValue(
+      "",
+    );
+    await dialog
+      .getByRole("button", { name: "Resolve available values" })
+      .click();
+    await expect(
+      dialog.getByRole("button", { name: "Resolve available values" }),
+    ).toBeEnabled();
+    await expect(
+      dialog.getByLabel("Business account", { exact: true }),
+    ).toHaveValue("manual-account");
+    await dialog
+      .getByRole("button", { name: "Copy sanitized discovery diagnostics" })
+      .click();
+    const preview = dialog.getByRole("region", {
+      name: "Sanitized discovery diagnostics preview",
+    });
+    await expect(preview).toBeVisible();
+    expect(
+      await page.evaluate(() => (window as any).copiedDiagnostics.length),
+    ).toBe(0);
+    await expect(preview).not.toContainText("actual-account");
+    await expect(preview).not.toContainText("manual-account");
+    await preview.getByRole("button", { name: "Copy preview" }).click();
+    expect(
+      await page.evaluate(() => (window as any).copiedDiagnostics.length),
+    ).toBe(1);
+    expect(
+      workflow.calls.some(
+        (c) => c.name === "getFolders" && c.args.accountId === "manual-account",
+      ),
+    ).toBe(true);
+    expect(
+      workflow.calls
+        .filter((c) => c.name === "getFolders")
+        .some((c) => c.args.accountId === "actual-account-1"),
+    ).toBe(true);
   } finally {
     f.runtime.engine.stopAll();
   }

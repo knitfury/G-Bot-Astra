@@ -157,6 +157,19 @@ export const schemas: Record<Operation, z.ZodType> = {
     z.record(z.string(), z.union([z.string(), z.boolean()])),
   ]),
   "desktop.paneSources": z.tuple([id]),
+  "desktop.paneResolve": z.tuple([
+    id,
+    z.string().min(1).max(4000),
+    z
+      .record(z.string(), z.unknown())
+      .refine((v) => JSON.stringify(v).length <= 16000),
+    z
+      .record(
+        z.string(),
+        z.union([z.string().max(4000), z.number().finite(), z.boolean()]),
+      )
+      .refine((v) => JSON.stringify(v).length <= 16000),
+  ]),
   "desktop.paneChoices": z.tuple([
     id,
     z.string().min(1).max(4000),

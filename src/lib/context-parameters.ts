@@ -214,31 +214,33 @@ export function emptyParameterContainers(
   visit(root, out, 0);
   return out;
 }
-export function choiceRecordPath(
+export function choiceRecordBinding(
   output: Record<string, unknown> | undefined,
   field: ParameterField,
-): string | undefined {
+): { collection: string; path: string } | undefined {
   if (!output || field.complex) return;
   let budget = 100;
   const leaf = field.path.split(".").at(-1)!.replace(/[_-]/g, "").toLowerCase();
-  function collection(input: unknown, depth: number): string | undefined {
+  const matches: { collection: string; path: string }[] = [];
+  function collection(input: unknown, depth: number, prefix = ""): void {
     if (--budget < 0 || depth > 5) return;
     const s = resolveParameterSchema(output!, input);
-    if (s.type === "array") return record(s.items, "", depth + 1);
+    if (s.type === "array") {
+      const paths = record(s.items, "", depth + 1);
+      for (const path of paths) matches.push({ collection: prefix, path });
+      return;
+    }
     if (isObject(s.properties))
-      for (const child of Object.values(s.properties)) {
-        const match = collection(child, depth + 1);
-        if (match) return match;
+      for (const [key, child] of Object.entries(s.properties)) {
+        if (forbidden.has(key) || key.includes(".")) continue;
+        collection(child, depth + 1, prefix ? `${prefix}.${key}` : key);
       }
   }
-  function record(
-    input: unknown,
-    path: string,
-    depth: number,
-  ): string | undefined {
-    if (--budget < 0 || depth > 6) return;
+  function record(input: unknown, path: string, depth: number): string[] {
+    if (--budget < 0 || depth > 6) return [];
     const s = resolveParameterSchema(output!, input);
-    if (!isObject(s.properties)) return;
+    if (!isObject(s.properties)) return [];
+    const paths: string[] = [];
     for (const [key, child] of Object.entries(s.properties)) {
       if (forbidden.has(key) || key.includes(".")) continue;
       const p = path ? `${path}.${key}` : key;
@@ -247,12 +249,20 @@ export function choiceRecordPath(
         key.replace(/[_-]/g, "").toLowerCase() === leaf &&
         resolved.type === field.schema.type
       )
-        return p;
-      const match = record(child, p, depth + 1);
-      if (match) return match;
+        paths.push(p);
+      paths.push(...record(child, p, depth + 1));
     }
+    return paths;
   }
-  return collection(output, 0);
+  collection(output, 0);
+  return budget >= 0 && matches.length === 1 ? matches[0] : undefined;
+}
+
+export function choiceRecordPath(
+  output: Record<string, unknown> | undefined,
+  field: ParameterField,
+): string | undefined {
+  return choiceRecordBinding(output, field)?.path;
 }
 
 export function requiresAdvancedParameters(

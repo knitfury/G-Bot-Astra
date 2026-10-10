@@ -31,6 +31,13 @@ test("native panes configure read parameters without AI; production cards never 
         let value: unknown;
         if (r.operation === "snapshot")
           value = await f.runtime.services.snapshot();
+        else if (r.operation === "desktop.paneResolve")
+          value = await f.runtime.snapshots.resolvePane(
+            r.args[0] as string,
+            r.args[1] as string,
+            r.args[2] as Record<string, unknown>,
+            r.args[3] as Record<string, string | number | boolean>,
+          );
         else if (r.operation === "desktop.readPreferences") value = null;
         else if (
           r.operation === "desktop.savePreferences" ||
