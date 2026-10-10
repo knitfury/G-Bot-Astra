@@ -617,10 +617,14 @@ export class Snapshots {
         field: issue.path,
         message: `${issue.message} ${decisions.find((d) => d.field === issue.path)?.reason ?? "This value cannot be established from the available declared discovery contracts."}`,
       }));
+      const attempted = new Set(attempts.map((attempt) => attempt.source));
       const relevant = [
         target,
-        ...sources.filter((s) => s !== target && s.purpose === "discovery"),
-      ].slice(0, 21);
+        ...sources.filter((source, position) => attempted.has(position)),
+        ...sources.filter((source) => source.purpose === "discovery"),
+      ]
+        .filter((source, position, all) => all.indexOf(source) === position)
+        .slice(0, 21);
       const operationName = (name: string) =>
         /^[A-Za-z_][A-Za-z0-9_.:-]{0,150}$/.test(name) && !/\d{6,}/.test(name)
           ? name

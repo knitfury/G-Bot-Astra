@@ -334,3 +334,49 @@ test("saved dependency scope cannot supply identifiers belonging to a different 
   );
   assert.equal(calls.length, 0);
 });
+
+test("bounded diagnostics retain actual dependency contracts even behind many other discovery sources", async () => {
+  const { c, engine } = nestedFixture();
+  const base = c.tools[2];
+  c.tools.unshift(
+    ...Array.from({ length: 25 }, (_, index) => ({
+      ...base,
+      id: `other-${index}`,
+      name: `getProjects_${String.fromCharCode(65 + index)}`,
+      schemaHash: `other-${index}`,
+      outputSchema: {
+        type: "object",
+        properties: {
+          records: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                projectId: { type: "string" },
+                name: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+    })),
+  );
+  const result = await engine.resolvePane(c.id, "tool:listEmails", {
+    path_variables: {},
+  });
+  const diagnostics = result.diagnostics as any;
+  assert.equal(diagnostics.sources.length, 21);
+  assert.equal(diagnostics.sources[0].name, "listEmails");
+  assert.ok(
+    diagnostics.sources.some((source: any) => source.name === "getAccounts"),
+  );
+  assert.ok(
+    diagnostics.sources.some((source: any) => source.name === "getFolders"),
+  );
+  for (const attempt of diagnostics.attempts)
+    assert.ok(
+      diagnostics.sources.some(
+        (source: any) => source.position === attempt.source,
+      ),
+    );
+});
