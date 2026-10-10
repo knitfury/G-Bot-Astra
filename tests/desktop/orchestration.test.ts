@@ -290,3 +290,43 @@ test("malformed nested persisted state is rejected before runtime hydration", ()
   (db as unknown as { connections: unknown[] }).connections = [{ id: "bad" }];
   assert.equal(databaseShape(db), false);
 });
+
+test("restart drain cancels pending approval without executing or replaying it", async () => {
+  const f = await setup({ write: true });
+  await f.s.execution.run(f.cid, "Send", f.model, []);
+  assert.equal(f.runtime.engine.active, true);
+  await f.runtime.engine.drain();
+  assert.equal(f.runtime.engine.active, false);
+  assert.equal(f.writeCalls(), 0);
+  const restarted = new Runtime(f.store, f.vault, f.inference, f.mcp, {
+    check: async () => {},
+    download: async () => {},
+  });
+  await restarted.init();
+  assert.equal(restarted.db.approvals[0].status, "cancelled");
+  assert.equal(f.writeCalls(), 0);
+});
+test("restart drain aborts active inference and persists interruption", async () => {
+  const f = await setup();
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => (started = resolve));
+  f.inference.generate = async (_config, _turns, _tools, signal) => {
+    started();
+    return await new Promise((_resolve, reject) =>
+      signal.addEventListener(
+        "abort",
+        () => reject(new DomainError("CANCELLED", "Stopped")),
+        { once: true },
+      ),
+    );
+  };
+  const running = f.s.execution.run(f.cid, "Wait", f.model, []);
+  await ready;
+  await f.runtime.engine.drain();
+  await running;
+  assert.equal(f.runtime.engine.active, false);
+  assert.equal(
+    f.runtime.db.conversations[0].messages.at(-1)!.status,
+    "cancelled",
+  );
+});

@@ -89,6 +89,13 @@ export interface AIProviderConnection extends Omit<ProviderInput, "key"> {
   lastTest: string;
 }
 export interface MCPTool {
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
+  outputSchema?: Record<string, unknown>;
   inputSchema?: Record<string, unknown>;
   schemaHash?: string;
   id: string;
@@ -101,6 +108,8 @@ export interface MCPTool {
   enabled: boolean;
 }
 export interface MCPConnection {
+  contextChoices?: Record<string, string | number | boolean>;
+  snapshotConfig?: import("./snapshot").SnapshotConfig;
   userConfigured?: boolean;
   id: string;
   slot: number;

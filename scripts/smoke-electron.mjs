@@ -1,4 +1,5 @@
-import { _electron as electron } from "playwright";
+import { createServer } from "node:net";
+import { _electron as electron, chromium } from "playwright";
 import { expect } from "@playwright/test";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -9,11 +10,16 @@ const packaged = process.argv.includes("--packaged");
 const executablePath = packaged
   ? process.platform === "win32"
     ? path.resolve("release/win-unpacked/G-Bot.exe")
-    : path.resolve(
-        `release/mac${process.arch === "arm64" ? "-arm64" : ""}/G-Bot.app/Contents/MacOS/G-Bot`,
-      )
+    : process.platform === "linux"
+      ? path.resolve("release/linux-unpacked/g-bot-astra")
+      : path.resolve(
+          `release/mac${process.arch === "arm64" ? "-arm64" : ""}/G-Bot.app/Contents/MacOS/G-Bot`,
+        )
   : undefined;
 const args = [
+  ...(process.platform === "linux"
+    ? ["-r", path.resolve("scripts/electron-test-keyring.cjs")]
+    : []),
   ...(packaged ? [] : [path.resolve(".")]),
   `--user-data-dir=${data}`,
 ];
@@ -217,6 +223,112 @@ try {
   );
   if (JSON.parse(workspace).version !== 2)
     throw Error("Workspace not encrypted");
+  // Native maintenance operates on cookies/cache only, never the encrypted stores.
+  const vaultBefore = await fs.readFile(
+    path.join(data, "real-v1", "credentials.json"),
+    "utf8",
+  );
+  await app.evaluate(async ({ session }) => {
+    await session.defaultSession.cookies.set({
+      url: "http://127.0.0.1",
+      name: "maintenance-fixture",
+      value: "cookie-only",
+    });
+  });
+  await app.evaluate(({ Menu, dialog, shell }) => {
+    globalThis.gbotMenuFixture = {
+      dialog: dialog.showMessageBox,
+      openPath: shell.openPath,
+      openExternal: shell.openExternal,
+      paths: [],
+      urls: [],
+    };
+    dialog.showMessageBox = async () => ({
+      response: 1,
+      checkboxChecked: false,
+    });
+    shell.openPath = async (path) => {
+      globalThis.gbotMenuFixture.paths.push(path);
+      return "";
+    };
+    shell.openExternal = async (url) => {
+      globalThis.gbotMenuFixture.urls.push(url);
+    };
+    const menu = Menu.getApplicationMenu();
+    if (!menu.items.find((i) => i.label === "Help"))
+      throw Error("Help menu missing");
+    const clear = menu.items
+      .find((i) => i.label === "G-Bot")
+      .submenu.items.find((i) => i.label === "Clear Cache & Cookies…");
+    clear.click();
+  });
+  await expect
+    .poll(() =>
+      app.evaluate(
+        async ({ session }) =>
+          (
+            await session.defaultSession.cookies.get({
+              name: "maintenance-fixture",
+            })
+          ).length,
+      ),
+    )
+    .toBe(0);
+  if (
+    (await fs.readFile(
+      path.join(data, "real-v1", "credentials.json"),
+      "utf8",
+    )) !== vaultBefore
+  )
+    throw Error("Cache clearing altered the credential vault");
+  const preserved = await page.evaluate(() =>
+    window.gbot.call("desktop.readPreferences", []),
+  );
+  if (!preserved.ok || preserved.value !== prefs)
+    throw Error("Cache clearing altered preferences");
+  await app.evaluate(({ Menu }) => {
+    const help = Menu.getApplicationMenu().items.find(
+      (i) => i.label === "Help",
+    ).submenu;
+    for (const label of [
+      "Open Logs Folder",
+      "Contact Support",
+      "Copy Diagnostic Information",
+    ])
+      help.items.find((i) => i.label === label).click();
+  });
+  await expect
+    .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
+    .toContain('"format": "g-bot-support"');
+  const nativeSupport = await app.evaluate(
+    ({ app, clipboard, dialog, shell }) => {
+      const f = globalThis.gbotMenuFixture;
+      dialog.showMessageBox = f.dialog;
+      shell.openPath = f.openPath;
+      shell.openExternal = f.openExternal;
+      return {
+        paths: f.paths,
+        urls: f.urls,
+        logs: app.getPath("logs"),
+        diagnostics: clipboard.readText(),
+      };
+    },
+  );
+  expect(nativeSupport.paths).toEqual([nativeSupport.logs]);
+  expect(nativeSupport.urls).toEqual([
+    "mailto:gbot@vidinex.ee?subject=G-Bot%20Support%20%E2%80%94%20Desktop",
+  ]);
+  if (
+    /private-native-draft|fixture-token|authorization|password/i.test(
+      nativeSupport.diagnostics,
+    )
+  )
+    throw Error("Diagnostics exposed private content");
+  const log = await fs.readFile(
+    path.join(nativeSupport.logs, "diagnostics.jsonl"),
+    "utf8",
+  );
+  if (!log.includes('"startup"')) throw Error("Startup diagnostics missing");
   const primaryId = await app.evaluate(
     ({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id,
   );
@@ -352,7 +464,9 @@ for (let restart = 1; restart <= 6; restart++) {
           exact: true,
         }),
       ).toBeChecked();
-      await expect(page.getByLabel("Next sign-in failure")).toHaveValue("network");
+      await expect(page.getByLabel("Next sign-in failure")).toHaveValue(
+        "network",
+      );
       await page.getByRole("button", { name: "General", exact: true }).click();
       await expect(
         page.getByRole("switch", { name: "Desktop notifications" }),
@@ -411,6 +525,147 @@ try {
     .toBe(2);
 } finally {
   await closeApp(reloading, "replacement during initial navigation");
+}
+
+// Exercise the real native Back menu and relaunch, then attach to the new process.
+const restartMenuApp = await launch();
+const restartProcess = restartMenuApp.process();
+let relaunchedBrowser;
+try {
+  const before = await restartMenuApp.firstWindow({ timeout: 60000 });
+  await before
+    .getByRole("heading", { name: "Meet your new way to work." })
+    .waitFor({ timeout: 60000 });
+  await before
+    .getByRole("button", { name: "Explore Demo", exact: true })
+    .click();
+  await before
+    .getByRole("heading", { name: "What can we get done?" })
+    .waitFor();
+  await before
+    .getByRole("link", { name: "Settings", exact: true })
+    .first()
+    .click();
+  await before.getByRole("button", { name: "Advanced", exact: true }).click();
+  await before
+    .getByRole("link", { name: "Configure a custom provider" })
+    .click();
+  await expect(before).toHaveURL(/\/providers$/);
+  const accelerator = await restartMenuApp.evaluate(({ Menu }) => {
+    const back = Menu.getApplicationMenu()
+      .items.find((i) => i.label === "View")
+      .submenu.items.find((i) => i.label === "Back");
+    back.click();
+    return back.accelerator;
+  });
+  expect(accelerator).toBe(
+    process.platform === "darwin" ? "Cmd+[" : "Alt+Left",
+  );
+  await expect(before).toHaveURL(/section=Advanced/);
+  await expect(
+    before.getByRole("heading", { name: "Simulation controls" }),
+  ).toBeVisible();
+  const listener = createServer();
+  await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  const port = listener.address().port;
+  await new Promise((resolve) => listener.close(resolve));
+  const exited = new Promise((resolve, reject) =>
+    restartProcess.once("exit", (code, signal) =>
+      code === 0 && !signal
+        ? resolve()
+        : reject(Error("Restart did not exit cleanly")),
+    ),
+  );
+  await restartMenuApp.evaluate(({ app, Menu }, port) => {
+    const relaunch = app.relaunch.bind(app);
+    app.relaunch = (options) =>
+      relaunch({
+        ...options,
+        args: [
+          ...(options?.args ?? []).filter(
+            (a) =>
+              !a.startsWith("--remote-debugging-port") && a !== "--no-sandbox",
+          ),
+          "--no-sandbox",
+          // Playwright appends this switch outside process.argv. Preserve its
+          // existing keychain mode so the real relaunch can decrypt the fixture.
+          // Packaged launches have no loader and must keep their native keychain.
+          ...(app.commandLine.hasSwitch("use-mock-keychain")
+            ? ["--use-mock-keychain"]
+            : []),
+          `--remote-debugging-port=${port}`,
+        ],
+      });
+    setTimeout(
+      () =>
+        Menu.getApplicationMenu()
+          .items.find((i) => i.label === "G-Bot")
+          .submenu.items.find((i) => i.label === "Restart G-Bot")
+          .click(),
+      0,
+    );
+  }, port);
+  await Promise.race([
+    exited,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(Error("Restart did not complete")),
+        45000,
+      ).unref(),
+    ),
+  ]);
+  await expect
+    .poll(
+      async () => {
+        try {
+          relaunchedBrowser = await chromium.connectOverCDP(
+            `http://127.0.0.1:${port}`,
+            { timeout: 1000 },
+          );
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 60000 },
+    )
+    .toBe(true);
+  const context = relaunchedBrowser.contexts()[0];
+  // CDP can connect before Electron has completed native initialization.
+  // Match the same 60-second startup bound used by firstWindow above.
+  await expect
+    .poll(() => context.pages().length, { timeout: 60000 })
+    .toBeGreaterThan(0);
+  const after = context.pages()[0];
+  await after
+    .getByRole("heading", { name: "What can we get done?" })
+    .waitFor({ timeout: 60000 });
+  expect(
+    await after.evaluate(() => ({
+      native: !!window.gbot,
+      demo: !!window.gbotDemo,
+    })),
+  ).toEqual({ native: false, demo: true });
+  await expect(after.locator("html")).toHaveAttribute("data-color", "green");
+  console.log(
+    "Native Back and Restart passed; a new process preserved isolated Demo state.",
+  );
+  const cdp = await relaunchedBrowser.newBrowserCDPSession();
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(Error("Relaunched process did not close")),
+      15000,
+    );
+    relaunchedBrowser.once("disconnected", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    void cdp.send("Browser.close").catch(() => {});
+  });
+} finally {
+  if (relaunchedBrowser) await relaunchedBrowser.close().catch(() => {});
+  if (restartProcess.exitCode === null)
+    await closeApp(restartMenuApp, "restart-menu cleanup");
 }
 
 if (nativeErrors.length)

@@ -1,4 +1,5 @@
 "use client";
+import { ContactSupport } from "@/components/common/contact-support";
 import { StorageControls } from "./storage-controls";
 import { useState } from "react";
 import Link from "next/link";
@@ -178,9 +179,21 @@ export function DesktopSettings({
                 </Button>
               </>
             )}
-            <a className="text-link" href="mailto:gbot@vidinex.ee">
-              Contact G-Bot Support
-            </a>
+            <div className="row wrap">
+              <Button
+                onClick={() => run(() => desktopCall("desktop.openLogs"))}
+              >
+                Open Logs Folder
+              </Button>
+              <Button
+                onClick={() =>
+                  run(() => desktopCall("desktop.copyDiagnostics"))
+                }
+              >
+                Copy Diagnostic Information
+              </Button>
+            </div>
+            <ContactSupport />
           </div>
         </>
       ) : (

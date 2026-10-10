@@ -1,3 +1,4 @@
+import { snapshotKinds } from "../types/snapshot";
 import { z } from "zod";
 export const planSchema = z.enum(["free", "starter", "business"]);
 export type Plan = z.infer<typeof planSchema>;
@@ -98,14 +99,57 @@ export const catalogEntry = z
   );
 export const catalogSchema = z
   .object({
-    version: z.literal(1),
+    version: z.union([z.literal(1), z.literal(2)]),
+    paneReads: z
+      .array(
+        z
+          .object({
+            endpoint: z
+              .string()
+              .url()
+              .refine((v) => {
+                const u = new URL(v);
+                return (
+                  u.protocol === "https:" &&
+                  !u.username &&
+                  !u.password &&
+                  !u.search &&
+                  !u.hash
+                );
+              }),
+            tool: z.string().min(1).max(200),
+            schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
+            label: z.string().min(1).max(100),
+            kind: z.enum(snapshotKinds),
+            arguments: z
+              .record(z.string(), z.unknown())
+              .refine((v) => JSON.stringify(v).length <= 16000),
+            evidence: z.string().min(21).max(2000),
+            fields: z
+              .object({
+                rows: z.string().max(500).optional(),
+                title: z.string().max(500).optional(),
+                subtitle: z.string().max(500).optional(),
+                preview: z.string().max(500).optional(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict(),
+      )
+      .max(200)
+      .optional(),
     sequence: z.number().int().positive(),
     issuedAt: z.number(),
     expiresAt: z.number(),
     entries: z.array(catalogEntry).max(200),
     disabledFeatures: z.array(z.enum(["recommended", "updates"])).max(2),
   })
-  .strict();
+  .strict()
+  .refine(
+    (v) => v.version === 2 || v.paneReads === undefined,
+    "Pane grants require catalog version 2",
+  );
 export type Catalog = z.infer<typeof catalogSchema>;
 export interface SubscriptionState {
   plan: Plan;

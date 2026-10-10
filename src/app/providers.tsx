@@ -1,4 +1,5 @@
 "use client";
+import { NavigationProvider } from "@/components/layout/app-back";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { MotionConfig } from "framer-motion";
@@ -36,7 +37,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <MotionConfig reducedMotion={reduced ? "always" : "user"}>
-        {children}
+        <NavigationProvider>{children}</NavigationProvider>
       </MotionConfig>
     </QueryClientProvider>
   );

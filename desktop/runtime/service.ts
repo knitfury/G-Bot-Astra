@@ -12,7 +12,11 @@ import type {
   MCPConnection,
 } from "../../src/types/domain";
 import { initialDatabase } from "../../src/data/mocks/seed";
-import { entitlementFor, canActivate, reconcileConnections } from "../../src/lib/entitlements";
+import {
+  entitlementFor,
+  canActivate,
+  reconcileConnections,
+} from "../../src/lib/entitlements";
 import { AtomicStore, SecretVault } from "./storage";
 import { DomainError, safeError } from "./errors";
 import { remoteURL, parseHeaders } from "./security";
@@ -65,7 +69,7 @@ export function databaseShape(value: unknown): value is Database {
     );
   if (!obj(value)) return false;
   const d = value;
-  const valid = (
+  const valid =
     d.schema === 1 &&
     Number.isInteger(d.revision) &&
     (d.user === null ||
@@ -175,8 +179,7 @@ export function databaseShape(value: unknown): value is Database {
     ) &&
     Array.isArray(d.records) &&
     obj(d.diagnostics) &&
-    typeof d.updateStatus === "string"
-  );
+    typeof d.updateStatus === "string";
   // Migrate only preference fields after all other workspace structure passes.
   // This also makes restored backups safe before their next runtime init.
   if (valid) d.preferences = normalizePreferences(d.preferences);
@@ -197,7 +200,12 @@ export class Runtime {
     private updates: { check(): Promise<void>; download(): Promise<void> },
     private identity?: ProductionIdentity,
   ) {
-    this.snapshots = new Snapshots(id=>this.db.connections.find(c=>c.id===id),()=>this.db.entitlement,mcp,(id,action,outcome)=>this.event(id,action,outcome));
+    this.snapshots = new Snapshots(
+      (id) => this.db.connections.find((c) => c.id === id),
+      () => this.db.entitlement,
+      mcp,
+      (id, action, outcome) => this.event(id, action, outcome),
+    );
     this.engine = new Orchestrator(
       () => this.db,
       () => this.save(),
@@ -235,22 +243,33 @@ export class Runtime {
       },
       snapshot: async () => structuredClone(this.db),
       auth: {
-        login: (email,password) => identity ? identity.login(email,password) : profile(email.split("@")[0], email),
-        signup: (name, email,password) => identity ? identity.signup(name,email,password) : profile(name, email),
+        login: (email, password) =>
+          identity
+            ? identity.login(email, password)
+            : profile(email.split("@")[0], email),
+        signup: (name, email, password) =>
+          identity
+            ? identity.signup(name, email, password)
+            : profile(name, email),
         resetPassword: async (email) => {
-          if(identity)return identity.reset(email);
+          if (identity) return identity.reset(email);
           throw new DomainError(
             "CAPABILITY",
             "Local profiles do not have a cloud password. Cloud identity is not configured.",
           );
         },
         demo: async () => {
-          if(identity)throw new DomainError("CAPABILITY","Open the separate Demo workspace to explore simulated data.");
+          if (identity)
+            throw new DomainError(
+              "CAPABILITY",
+              "Open the separate Demo workspace to explore simulated data.",
+            );
           await profile("Local workspace", "");
         },
         logout: async () => {
           this.engine.stopAll();
-          if(identity)await identity.logout();
+          this.snapshots.clear();
+          if (identity) await identity.logout();
           else await this.services.secureStorage.clear();
           this.db.user = null;
           await this.save();
@@ -272,7 +291,11 @@ export class Runtime {
           await this.save();
         },
         reset: async () => {
-          if(identity)throw new DomainError("CAPABILITY","Use local data controls to erase selected data. Demo reset is available only in Demo Mode.");
+          if (identity)
+            throw new DomainError(
+              "CAPABILITY",
+              "Use local data controls to erase selected data. Demo reset is available only in Demo Mode.",
+            );
           this.engine.stopAll();
           await this.services.secureStorage.clear();
           this.db = localDatabase();
@@ -286,13 +309,21 @@ export class Runtime {
       entitlements: {
         get: async () => this.db.entitlement,
         change: async (plan) => {
-          if(identity)throw new DomainError("ENTITLEMENT","Manage your subscription in your account. Plan changes are confirmed securely after billing.");
+          if (identity)
+            throw new DomainError(
+              "ENTITLEMENT",
+              "Manage your subscription in your account. Plan changes are confirmed securely after billing.",
+            );
           this.db.entitlement = entitlementFor(plan);
           this.event("", "Development plan changed", "completed");
           await this.save();
         },
         expire: async (expired) => {
-          if(identity)throw new DomainError("ENTITLEMENT","Simulation cannot change your account entitlement.");
+          if (identity)
+            throw new DomainError(
+              "ENTITLEMENT",
+              "Simulation cannot change your account entitlement.",
+            );
           this.db.entitlement.status = expired ? "expired" : "active";
           await this.save();
         },
@@ -377,7 +408,8 @@ export class Runtime {
         },
       },
       connections: {
-        snapshot: (id,refresh) => this.snapshots.get(id,refresh),
+        snapshot: (id, refresh, context) =>
+          this.snapshots.get(id, refresh, context),
         list: async () => this.db.connections,
         save: async (input, id) => {
           remoteURL(input.url);
@@ -424,6 +456,8 @@ export class Runtime {
           this.db.connections = this.db.connections.filter((c) => c.id !== cid);
           this.db.connections.push({
             id: cid,
+            contextChoices: unchanged ? prior?.contextChoices : undefined,
+            snapshotConfig: unchanged ? prior?.snapshotConfig : undefined,
             userConfigured: true,
             slot: input.slot,
             name: input.name,
@@ -469,9 +503,15 @@ export class Runtime {
           await this.save();
           try {
             const tools = await mcp.connect(c);
-            if (!c.enabled || !canActivate(this.db.entitlement, this.db.connections, id)) {
+            if (
+              !c.enabled ||
+              !canActivate(this.db.entitlement, this.db.connections, id)
+            ) {
               await mcp.disconnect(id);
-              throw new DomainError("ENTITLEMENT", "Connection activation was cancelled or the plan changed.");
+              throw new DomainError(
+                "ENTITLEMENT",
+                "Connection activation was cancelled or the plan changed.",
+              );
             }
             c.tools = tools;
             c.status = "connected";
@@ -500,12 +540,17 @@ export class Runtime {
           await mcp.disconnect(id);
           c.status = "disconnected";
           c.enabled = false;
-          this.event(id, "MCP disconnected; configuration retained", "completed");
+          this.event(
+            id,
+            "MCP disconnected; configuration retained",
+            "completed",
+          );
           await this.save();
         },
         remove: async (id) => {
           await this.services.connections.disconnect(id);
-          for (const suffix of ["manual", "oauth-tokens", "oauth-client"]) await vault.delete(`${id}:${suffix}`);
+          for (const suffix of ["manual", "oauth-tokens", "oauth-client"])
+            await vault.delete(`${id}:${suffix}`);
           this.db.connections = this.db.connections.filter((c) => c.id !== id);
           await this.save();
         },
@@ -534,9 +579,20 @@ export class Runtime {
       },
       tools: {
         selectAll: async (cid, enabled) => {
-          const c=find(cid); const previous=c.tools.map(t=>t.enabled);
-          c.tools.forEach(t=>{t.enabled=enabled;});
-          try {await this.save();this.snapshots.clear();} catch(e){c.tools.forEach((t,i)=>{t.enabled=previous[i];});throw e;}
+          const c = find(cid);
+          const previous = c.tools.map((t) => t.enabled);
+          c.tools.forEach((t) => {
+            t.enabled = enabled;
+          });
+          try {
+            await this.save();
+            this.snapshots.clear();
+          } catch (e) {
+            c.tools.forEach((t, i) => {
+              t.enabled = previous[i];
+            });
+            throw e;
+          }
         },
         toggle: async (cid, tid, enabled) => {
           const c = find(cid),
@@ -577,8 +633,10 @@ export class Runtime {
         },
         remove: async (id) => {
           this.engine.stop(id);
-          const removed=this.db.conversations.find(c=>c.id===id);
-          for(const message of removed?.messages??[])for(const attachment of message.attachments??[])this.attachments.remove(attachment.id);
+          const removed = this.db.conversations.find((c) => c.id === id);
+          for (const message of removed?.messages ?? [])
+            for (const attachment of message.attachments ?? [])
+              this.attachments.remove(attachment.id);
           this.db.conversations = this.db.conversations.filter(
             (c) => c.id !== id,
           );
@@ -624,7 +682,9 @@ export class Runtime {
             p.status = "disconnected";
             p.maskedCredential = "Credential removed";
           }
-          await vault.deleteMatching(id=>/:provider$|:manual$|:oauth-tokens$|:oauth-client$/.test(id));
+          await vault.deleteMatching((id) =>
+            /:provider$|:manual$|:oauth-tokens$|:oauth-client$/.test(id),
+          );
           await this.save();
         },
         status: async () =>
@@ -670,7 +730,7 @@ export class Runtime {
     migrateDemoConnections(this.db);
     delete this.db.demoConnections;
     this.db.preferences = normalizePreferences(this.db.preferences);
-    if(this.identity)this.db.entitlement.status="expired";
+    if (this.identity) this.db.entitlement.status = "expired";
     for (const c of this.db.connections) {
       c.status = "disconnected";
       c.enabled = false;
@@ -694,7 +754,10 @@ export class Runtime {
     for (const listener of this.listeners) listener();
   }
   async save() {
-    const paused = reconcileConnections(this.db.entitlement, this.db.connections);
+    const paused = reconcileConnections(
+      this.db.entitlement,
+      this.db.connections,
+    );
     for (const id of paused) await this.mcp.disconnect(id);
     if (paused.length) this.snapshots.clear();
     retainActivity(this.db);

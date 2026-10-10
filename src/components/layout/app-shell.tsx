@@ -1,4 +1,5 @@
 "use client";
+import { AppBack } from "./app-back";
 import { useAccountLinks } from "@/features/auth/account-boundary";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -100,6 +101,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
         <header className="topbar">
+          <AppBack
+            session={`${data.runtime ? "real" : "demo"}:${data.user.id}`}
+          />
           <div className="row">
             <span className="wordmark">
               G-Bot<span className="wordmark-dot">.</span>

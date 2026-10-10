@@ -69,9 +69,16 @@ export class Orchestrator {
     this.db().activity.unshift({
       messageId: message?.id,
       provider: message?.providerName,
-      model: message?.automaticRouting ? message.routedModels?.join(", ") || "Routed automatically" : message?.requestedModel,
+      model: message?.automaticRouting
+        ? message.routedModels?.join(", ") || "Routed automatically"
+        : message?.requestedModel,
       retryCount: message?.retryCount ?? 0,
-      durationMs: message?.endedAt ? Math.max(0, Date.parse(message.endedAt) - Date.parse(message.createdAt)) : undefined,
+      durationMs: message?.endedAt
+        ? Math.max(
+            0,
+            Date.parse(message.endedAt) - Date.parse(message.createdAt),
+          )
+        : undefined,
       id: randomUUID(),
       timestamp: stamp(),
       actor: "G-Bot",
@@ -369,7 +376,15 @@ export class Orchestrator {
             this.notify();
           },
         );
-        if (run.message.automaticRouting && result.model && result.model !== config.model && !["auto", "openrouter/auto"].includes(result.model)) run.message.routedModels = [...new Set([...(run.message.routedModels ?? []), result.model])];
+        if (
+          run.message.automaticRouting &&
+          result.model &&
+          result.model !== config.model &&
+          !["auto", "openrouter/auto"].includes(result.model)
+        )
+          run.message.routedModels = [
+            ...new Set([...(run.message.routedModels ?? []), result.model]),
+          ];
         run.turns.push({
           role: "assistant",
           text: result.text,
@@ -378,7 +393,14 @@ export class Orchestrator {
         if (!result.calls.length) {
           run.message.status = "completed";
           run.message.endedAt = stamp();
-          this.audit(run.cid, "", "", "AI execution completed", "completed", false);
+          this.audit(
+            run.cid,
+            "",
+            "",
+            "AI execution completed",
+            "completed",
+            false,
+          );
           this.runs.delete(run.cid);
           return;
         }
@@ -390,7 +412,15 @@ export class Orchestrator {
       run.retryContent = checkpoint;
       run.message.status = error.code === "CANCELLED" ? "cancelled" : "failed";
       run.message.endedAt = stamp();
-      this.audit(run.cid, "", "", "AI execution interrupted", run.message.status, false, error.message);
+      this.audit(
+        run.cid,
+        "",
+        "",
+        "AI execution interrupted",
+        run.message.status,
+        false,
+        error.message,
+      );
       run.message.content += `\n\n${error.message}`;
     } finally {
       run.busy = false;
@@ -515,6 +545,35 @@ export class Orchestrator {
     run.retryContent = undefined;
     run.controller = new AbortController();
     await this.advance(run);
+  }
+  get active() {
+    return (
+      this.starting.size > 0 ||
+      [...this.runs.values()].some(
+        (r) => r.busy || r.message.status === "approval required",
+      )
+    );
+  }
+  async drain() {
+    this.stopAll();
+    const deadline = Date.now() + 10_000;
+    while (this.starting.size || [...this.runs.values()].some((r) => r.busy)) {
+      if (Date.now() > deadline)
+        throw new DomainError(
+          "CAPABILITY",
+          "An operation has not stopped yet. Wait and try again; verify external activity before repeating changes.",
+        );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      this.stopAll();
+    }
+    for (const run of this.runs.values()) {
+      if (run.message.status === "approval required") {
+        run.message.status = "cancelled";
+        run.message.endedAt = stamp();
+      }
+    }
+    this.notify();
+    await this.persist();
   }
   stopAll() {
     for (const cid of this.runs.keys()) this.stop(cid);

@@ -43,14 +43,29 @@ export class DesktopOAuth implements OAuthClientProvider {
   async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
     if (this.clientId) return { client_id: this.clientId };
     const raw = await this.vault.get(`${this.id}:oauth-client`);
-    return raw ? JSON.parse(raw) : undefined;
+    return this.boundCredentials<OAuthClientInformationMixed>(raw);
   }
   async saveClientInformation(info: OAuthClientInformationMixed) {
     await this.vault.set(`${this.id}:oauth-client`, JSON.stringify(info));
   }
   async tokens(): Promise<OAuthTokens | undefined> {
     const raw = await this.vault.get(`${this.id}:oauth-tokens`);
-    return raw ? JSON.parse(raw) : undefined;
+    return this.boundCredentials<OAuthTokens>(raw);
+  }
+  private boundCredentials<T>(raw: string | undefined): T | undefined {
+    // Older SDK versions stored no authorization-server binding. Never offer
+    // those credentials to a server-selected issuer; require fresh sign-in.
+    // Retain the vault entry until successful authorization replaces it.
+    try {
+      const value = raw ? JSON.parse(raw) : undefined;
+      if (!value || typeof value.issuer !== "string") return undefined;
+      const issuer = new URL(value.issuer);
+      if (issuer.protocol !== "https:" || issuer.username || issuer.password)
+        return undefined;
+      return value as T;
+    } catch {
+      return undefined;
+    }
   }
   async saveTokens(tokens: OAuthTokens) {
     await this.vault.set(`${this.id}:oauth-tokens`, JSON.stringify(tokens));

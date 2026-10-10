@@ -1,4 +1,5 @@
 "use client";
+import { inferKind } from "@/lib/context-inference";
 import { contextConnections } from "@/lib/connections";
 import { BusinessSnapshotPane } from "./business-snapshot";
 import { useState } from "react";
@@ -92,14 +93,30 @@ function Records({ connection }: { connection: MCPConnection }) {
             )}
             <div className="grow">
               <div className="row between">
-                <strong className={connection.category === "Email" || connection.category === "Inventory" ? "context-content" : undefined}>
+                <strong
+                  className={
+                    connection.category === "Email" ||
+                    connection.category === "Inventory"
+                      ? "context-content"
+                      : undefined
+                  }
+                >
                   {connection.category === "Email" ? r.customer : r.title}
                 </strong>
                 {connection.category === "Email" && (
                   <span className="unread-dot" />
                 )}
               </div>
-              <p className={connection.category === "Email" || connection.category === "Inventory" ? "context-content" : undefined}>{connection.category === "Email" ? r.title : r.subtitle}</p>
+              <p
+                className={
+                  connection.category === "Email" ||
+                  connection.category === "Inventory"
+                    ? "context-content"
+                    : undefined
+                }
+              >
+                {connection.category === "Email" ? r.title : r.subtitle}
+              </p>
               <span>
                 {connection.category === "Inventory"
                   ? `${r.metadata.stock} in stock`
@@ -168,11 +185,21 @@ function RecordDetail({ record: r }: { record: BusinessRecord }) {
                 .join("")}
             </span>
             <div>
-              <strong className={r.category === "Email" ? "context-content" : undefined}>{r.customer}</strong>
+              <strong
+                className={
+                  r.category === "Email" ? "context-content" : undefined
+                }
+              >
+                {r.customer}
+              </strong>
               <p>{r.metadata.email}</p>
             </div>
           </div>
-          <p className={`record-body ${r.category === "Email" ? "context-content" : ""}`}>{r.body}</p>
+          <p
+            className={`record-body ${r.category === "Email" ? "context-content" : ""}`}
+          >
+            {r.body}
+          </p>
           <div className="detail-pairs">
             <span>Customer</span>
             <strong>{r.company}</strong>
@@ -209,8 +236,22 @@ export function BusinessAppPane({
   const selected = contextConnections(data).find(
     (c) => c.id === pane.selectedConnectionId,
   );
+  const mail = (c: MCPConnection) =>
+    c.category === "Email" ||
+    c.tools.some(
+      (t) =>
+        inferKind(`${t.name} ${t.description ?? ""}`, t.outputSchema) ===
+        "mail",
+    );
+  const active = connections.filter(
+    (c) => c.enabled && ["connected", "degraded"].includes(c.status),
+  );
+  const suggested = data.runtime
+    ? active.find((c) => (side === "left" ? mail(c) : !mail(c)))
+    : undefined;
   const connection =
     selected ||
+    suggested ||
     connections[side === "left" ? 0 : Math.min(1, connections.length - 1)];
   const available =
     connection && connectionAvailable(data.entitlement, connection);
@@ -293,7 +334,11 @@ export function BusinessAppPane({
       <div className="pane-content">
         {connection && available ? (
           data.runtime ? (
-            <BusinessSnapshotPane connection={connection} refresh={refresh} />
+            <BusinessSnapshotPane
+              key={connection.id}
+              connection={connection}
+              refresh={refresh}
+            />
           ) : (
             <Records
               key={`${connection.id}-${refresh}`}

@@ -48,6 +48,15 @@ test("structured diagnostics accept fixed codes, persist locally and exclude arb
   const row = JSON.parse(
     await readFile(join(dir, "diagnostics.jsonl"), "utf8"),
   );
-  assert.deepEqual(Object.keys(row).sort(), ["code", "event", "time"]);
+  assert.deepEqual(Object.keys(row).sort(), [
+    "code",
+    "event",
+    "osVersion",
+    "platform",
+    "severity",
+    "subsystem",
+    "time",
+    "version",
+  ]);
   assert.equal(row.code, "PROVIDER_AUTH");
 });

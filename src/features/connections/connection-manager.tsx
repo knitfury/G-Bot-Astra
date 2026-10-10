@@ -1,7 +1,9 @@
 "use client";
+import { discoveryDetails } from "@/lib/mcp-discovery";
 import { contextConnections } from "@/lib/connections";
 import { CatalogBrowser } from "./catalog-browser";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AsyncCheckbox } from "@/components/ui/async-checkbox";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -351,7 +353,11 @@ export function ConnectionManager({
       </div>
 
       {!!data.demoConnections?.length && !data.runtime && (
-        <Notice>Workspace Demo examples are fictional context, not saved MCP connections. Add your own configuration here to try the connection setup.</Notice>
+        <Notice>
+          Workspace Demo examples are fictional context, not saved MCP
+          connections. Add your own configuration here to try the connection
+          setup.
+        </Notice>
       )}
       {!data.connections.length && (
         <Empty
@@ -432,8 +438,12 @@ export function ConnectionManager({
 export function ConnectionDetail({ id }: { id: string }) {
   const { data } = useSnapshot(),
     action = useAction();
-  const [tab, setTab] = useState("Overview"),
-    [edit, setEdit] = useState(false),
+  const section = useSearchParams().get("section");
+  const [selectedTab, setTab] = useState<string>();
+  const tab =
+    selectedTab ??
+    (section === "Tools" || section === "Permissions" ? section : "Overview");
+  const [edit, setEdit] = useState(false),
     [remove, setRemove] = useState(false),
     [consent, setConsent] = useState(false);
   if (!data) return <Loading />;
@@ -447,13 +457,15 @@ export function ConnectionDetail({ id }: { id: string }) {
         action="Back to connected apps"
       />
     );
-  const available = canActivate(data.entitlement, !data.runtime && data.demoConnections?.includes(c) ? data.demoConnections : data.connections, c.id);
+  const available = canActivate(
+    data.entitlement,
+    !data.runtime && data.demoConnections?.includes(c)
+      ? data.demoConnections
+      : data.connections,
+    c.id,
+  );
   return (
     <div className="page">
-      <Link className="row text-link tiny" href="/connections">
-        <ArrowLeft size={15} />
-        Connected apps
-      </Link>
       <PageHeading
         eyebrow="CONNECTION DETAILS"
         title={c.name}
@@ -668,6 +680,20 @@ export function ConnectionDetail({ id }: { id: string }) {
         ) : (
           <div className="stack">
             <h2>Technical connection details</h2>
+            <details>
+              <summary>Sanitized MCP discovery for support</summary>
+              <p>
+                Reconnect first to refresh metadata. Copy the JSON below; review
+                tool and parameter identifiers before sharing. Endpoint,
+                credentials and mail data are excluded.
+              </p>
+              <textarea
+                aria-label="Sanitized MCP discovery"
+                readOnly
+                rows={12}
+                value={JSON.stringify(discoveryDetails(c), null, 2)}
+              />
+            </details>
             <label className="field">
               MCP URL
               <input readOnly value={c.url} />
